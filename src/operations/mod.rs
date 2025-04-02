@@ -6,7 +6,7 @@
 //! These operations represent the fundamental ways in which Qualitative
 //! Distinction Units (QDUs) can interact and have their states modified
 //! within a simulation, according to the necessary consequences outlined
-//! in the Universal Foundational Framework.
+//! in the framework.
 
 // Import necessary types from the core module
 use crate::core::QduId;
