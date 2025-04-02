@@ -1,0 +1,26 @@
+[package]
+name = "onq"
+version = "0.1.0"
+edition = "2024"
+authors = ["n12n <nigel.christian@hiahatf.org>", "Gemini"]
+documentation = "https://docs.rs/onq"
+description = "Operations for Next-generation Quantum computing"
+repository = "https://github.com/kn0sys/onq"
+license = "MIT"
+readme = "README.md"
+keywords = [
+    "quantum-computing",
+    "quantum",
+    "security",
+]
+categories = ["simulation"]
+
+[lib]
+name = "onq"
+path = "src/lib.rs"
+crate-type = ["lib"]
+
+[dependencies]
+num-complex = "0.4.6"
+num-traits = "0.2.19"
+rand = "0.9.0"
