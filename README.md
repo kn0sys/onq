@@ -268,3 +268,13 @@ Simulation Results:
 Analysis: Outcome depends on complex interplay of C scores for state 0.5*(|00>+|01>+|10>+i|11>).
 
 ```
+
+## License
+
+Licensed under
+
+MIT license (LICENSE-MIT or http://opensource.org/licenses/MIT)
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit issues or pull requests.
