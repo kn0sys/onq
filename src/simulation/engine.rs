@@ -169,7 +169,7 @@ impl SimulationEngine {
 /// 4. Collapsing the global state vector to the chosen outcome basis state |k>.
 /// 5. Recording the resolved states for the specifically targeted QDUs based on |k>.
 ///
-/// **CRITICAL:** The C_A and CB scoring functions are experimental
+/// **CRITICAL:** The C_A and C_B scoring functions are experimental
 /// C_B is currently interpreted as amplifying the contribution
 /// of amplitude itself for coherent states (using |c_k|^4 in the final score).
 pub(crate) fn stabilize(&mut self, targets: &[QduId], result: &mut SimulationResult) -> Result<(), OnqError> {
@@ -196,7 +196,7 @@ pub(crate) fn stabilize(&mut self, targets: &[QduId], result: &mut SimulationRes
                 if score_c1 > 0.618 {
 
                     // Final Score S(k) - combines potentiality and filtered stability/coherence factors
-                    let final_score = score_c1 * amplitude_sq * amplitude_sq;
+                    let final_score = score_c1 * amplitude_sq;
 
                 // Check if the final score is numerically valid and positive
                 if final_score.is_finite() && final_score > 1e-12 { // Use tolerance for score as well
