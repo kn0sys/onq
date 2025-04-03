@@ -455,16 +455,14 @@ pub(crate) fn stabilize(&mut self, targets: &[QduId], result: &mut SimulationRes
         score.clamp(0.0, 1.0) // Clamp for robustness
     }
 
-// Add this helper method inside impl SimulationEngine in src/simulation/engine.rs
-
     /// Applies a 4x4 matrix operation targeting two specific QDUs within the global state vector.
     /// Assumes standard tensor product structure for the global state vector.
-    /// Used for operations like RelationalLock or other two-QDU interactions.
+    /// Used for operations like RelationalLock or ControlledInteraction.
     fn apply_two_qdu_gate(
         &mut self,
-        idx1: usize, // Index of the first QDU (e.g., corresponds to row index in 4x4 matrix's 2x2 blocks)
-        idx2: usize, // Index of the second QDU (e.g., corresponds to col index in 4x4 matrix's 2x2 blocks)
-        matrix: &[[Complex<f64>; 4]; 4], // The 4x4 matrix to apply
+        idx1: usize, // Index of the first QDU (maps to first index in |b1,b2> basis for matrix)
+        idx2: usize, // Index of the second QDU (maps to second index in |b1,b2> basis for matrix)
+        matrix: &[[Complex<f64>; 4]; 4], // The 4x4 matrix (assuming basis |00>,|01>,|10>,|11>)
     ) -> Result<(), OnqError> {
         if idx1 == idx2 {
             return Err(OnqError::InvalidOperation { message: "Target indices for a two-QDU gate cannot be the same".to_string() });
@@ -472,69 +470,73 @@ pub(crate) fn stabilize(&mut self, targets: &[QduId], result: &mut SimulationRes
 
         let n = self.num_qdus;
         let dim = self.global_state.dim(); // 2^n
-        let mut new_vec = vec![Complex::zero(); dim]; // Store results here
+        let mut new_vec = self.global_state.vector().to_vec(); // Operate on a mutable copy
 
-        // Determine bit positions (k-values) corresponding to indices
-        // Ensure k1 is the higher-order bit position for consistent indexing logic
-        let k1_raw = n - 1 - idx1;
-        let k2_raw = n - 1 - idx2;
-        let (k1, k2) = (k1_raw.max(k2_raw), k1_raw.min(k2_raw)); // k1 > k2
+        // Determine bit positions (k-values, 0 to n-1 from right) corresponding directly to indices
+        let k_idx1 = n - 1 - idx1;
+        let k_idx2 = n - 1 - idx2;
 
-        let k1_mask = 1 << k1;
-        let k2_mask = 1 << k2;
-
-        // Iterate through all combinations of the other (n-2) qdus
-        for i_other in 0..(dim / 4) { // 2^(n-2) iterations
-            // Construct the base index by splitting i_other and inserting 0s at k1 and k2
-            // Mask for bits above k1
-            let _upper_mask = !((k1_mask << 1) - 1);
-            // Mask for bits between k1 and k2
-            let _middle_mask = ((1 << k1) - 1) & !((k2_mask << 1) - 1);
-            // Mask for bits below k2
-            let lower_mask = (1 << k2) - 1;
-
-            let i_upper = (i_other >> (k1 - k2 - 1)) << (k1 + 1); // Shift bits originally above k1
-            let i_middle = ((i_other >> k2) & ((1 << (k1 - k2 - 1)) - 1)) << (k2 + 1); // Shift bits originally between k1 and k2
-            let i_lower = i_other & lower_mask; // Keep bits originally below k2
-
-            let i_base = i_upper | i_middle | i_lower; // Base index with 0s at k1, k2
-
-            // Calculate the four indices for the subspace {00, 01, 10, 11} for qdus at idx1, idx2
-            // The order matters for applying the 4x4 matrix correctly.
-            // Assuming matrix rows/cols correspond to |idx1_val, idx2_val> basis: |00> |01> |10> |11>
-            // Let's map basis state bits (b1, b2) where b1 is for idx1 (pos k1_raw) and b2 for idx2 (pos k2_raw)
-            // Index in 4x4 matrix = b1*2 + b2
-            let indices = [
-                i_base,                            // 00: b1=0 (k1_raw), b2=0 (k2_raw)
-                i_base | (1 << k2_raw),            // 01: b1=0 (k1_raw), b2=1 (k2_raw)
-                i_base | (1 << k1_raw),            // 10: b1=1 (k1_raw), b2=0 (k2_raw)
-                i_base | (1 << k1_raw) | (1 << k2_raw), // 11: b1=1 (k1_raw), b2=1 (k2_raw)
-            ];
-
-            // Extract the four amplitudes
-            let mut psi = [Complex::zero(); 4];
-            for j in 0..4 {
-                 if indices[j] < dim { // Check bounds just in case
-                    psi[j] = self.global_state.vector()[indices[j]];
-                 } else {
-                      return Err(OnqError::SimulationError { message: format!("Calculated index out of bounds during two QDU gate application. Index={}, dim={}", indices[j], dim) });
-                 }
+        // Iterate through all 2^(n-2) combinations of the 'other' qdus not being targeted
+        for i_other in 0..(dim / 4) {
+            // Construct the base index 'i_base' which has the correct bit pattern for
+            // the 'other' qdus, and zeros at the target positions k_idx1 and k_idx2.
+            let mut i_base = 0;
+            let mut other_bit_mask = 1; // Tracks the bit significance in i_other
+            for current_k in 0..n {
+                if current_k == k_idx1 || current_k == k_idx2 {
+                    // This position is for target qdus, leave it 0 in i_base
+                } else {
+                    // This position corresponds to one of the 'other' qdus.
+                    // Set the bit in i_base if the corresponding bit is set in i_other.
+                    if (i_other & other_bit_mask) != 0 {
+                        i_base |= 1 << current_k;
+                    }
+                    // Move to the next bit significance for i_other
+                    other_bit_mask <<= 1;
+                }
             }
 
-            // Apply the 4x4 matrix: psi' = matrix * psi
+            // Calculate the four subspace indices by setting bits k_idx1 and k_idx2 in i_base
+            let k1_mask = 1 << k_idx1;
+            let k2_mask = 1 << k_idx2;
+
+            // Indices corresponding to |idx1=0,idx2=0>, |0,1>, |1,0>, |1,1> basis states
+            let indices = [
+                i_base,                    // 00
+                i_base | k2_mask,          // 01
+                i_base | k1_mask,          // 10
+                i_base | k1_mask | k2_mask,// 11
+            ];
+
+            // Extract the current amplitudes for this subspace
+            // Note: Need to ensure indices are valid before accessing vector - though i_base logic should guarantee this if dim >= 4
+             if indices[3] >= dim { // Check highest index only is sufficient
+                 return Err(OnqError::SimulationError { message: format!("Internal error: Calculated index {} >= dimension {} in apply_two_qdu_gate.", indices[3], dim) });
+             }
+            let psi = [
+                self.global_state.vector()[indices[0]], // psi_00
+                self.global_state.vector()[indices[1]], // psi_01
+                self.global_state.vector()[indices[2]], // psi_10
+                self.global_state.vector()[indices[3]], // psi_11
+            ];
+
+
+            // Apply the 4x4 matrix M: psi_prime = M * psi
+            // (Assuming matrix is in basis order |00>,|01>,|10>,|11>)
             let mut psi_prime = [Complex::zero(); 4];
             for row in 0..4 {
-                for (col, _) in psi.iter().enumerate()  {
+                for (col, _) in psi.iter().enumerate() {
                     psi_prime[row] += matrix[row][col] * psi[col];
                 }
             }
 
-            // Write the results back into the new vector
+            // Write the results back into the new vector (which was cloned initially)
             for j in 0..4 {
-                new_vec[indices[j]] = psi_prime[j];
+                 new_vec[indices[j]] = psi_prime[j];
             }
-        }
+        } // end loop over i_other
 
+        // Update the engine's state vector
         self.global_state = PotentialityState::new(new_vec);
         Ok(())
     }

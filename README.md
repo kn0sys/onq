@@ -269,6 +269,12 @@ Analysis: Outcome depends on complex interplay of C scores for state 0.5*(|00>+|
 
 ```
 
+## Notebooks
+
+* install [jupyter-lab](https://jupyter.org/)
+* install [evcxr](https://github.com/evcxr/evcxr/blob/main/evcxr_jupyter/README.md)
+* see the `onq/notebooks` directory
+
 ## License
 
 Licensed under
