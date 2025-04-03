@@ -90,7 +90,7 @@ fn main() {
 
             // --- Basic Result Analysis ---
             // Ideally, Bob's QDU (bob_q) now holds the original state of msg_q (which was |+>).
-            // Stabilizing the |+> state = (1/sqrt(2))[|0> + |1>] depends on the UFF rules.
+            // Stabilizing the |+> state = (1/sqrt(2))[|0> + |1>] depends on the rules.
             // Based on our current stabilization (S(0)=0.25, S(1)=0.25), the outcome for Bob
             // will be deterministically 0 or 1 based on the final state hash and PRNG.
             // A full verification would require state vector tomography (not implemented)
