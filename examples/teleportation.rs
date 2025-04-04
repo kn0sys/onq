@@ -1,9 +1,8 @@
 //! Succinct examples demonstrating building and simulating circuits
 
 use onq::{
-    Circuit, CircuitBuilder, Operation, QduId, Simulator, SimulationResult, StableState, OnqError
+    CircuitBuilder, Operation, QduId, Simulator, StableState
 };
-use std::f64::consts::PI;
 
 // Helper for QduId creation for brevity in examples
 fn qid(id: u64) -> QduId { QduId(id) }

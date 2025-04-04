@@ -142,14 +142,14 @@ impl SimulationEngine {
                 let idx2 = *self.get_qdu_index(qdu2)?;
 
                 let theta = if *establish { *lock_params } else { -*lock_params };
-                let phase_factor = Complex::new(theta.cos(), theta.sin());
-                let cphase_matrix: [[Complex<f64>; 4]; 4] = [ // diag(1,1,1,exp(i*theta))
-                    [Complex::new(1.0, 0.0), Complex::zero(), Complex::zero(), Complex::zero()],
-                    [Complex::zero(), Complex::new(1.0, 0.0), Complex::zero(), Complex::zero()],
-                    [Complex::zero(), Complex::zero(), Complex::new(1.0, 0.0), Complex::zero()],
-                    [Complex::zero(), Complex::zero(), Complex::zero(), phase_factor],
-                ];
-                self.apply_two_qdu_gate(idx1, idx2, &cphase_matrix)?;
+                let phase_factor = Complex::new(theta.cos(), theta.sin()); // e^(i*theta)
+                let xor_phase_matrix: [[Complex<f64>; 4]; 4] = [
+                    [Complex::new(1.0, 0.0), Complex::zero(),         Complex::zero(),         Complex::zero()        ], // |00> -> 1 * |00>
+                    [Complex::zero(),         phase_factor,          Complex::zero(),         Complex::zero()        ], // |01> -> e^iθ * |01>
+                    [Complex::zero(),         Complex::zero(),         phase_factor,          Complex::zero()        ], // |10> -> e^iθ * |10>
+                    [Complex::zero(),         Complex::zero(),         Complex::zero(),         Complex::new(1.0, 0.0)], // |11> -> 1 * |11>
+                 ];
+                 self.apply_two_qdu_gate(idx1, idx2, &xor_phase_matrix)?;
             }
             Operation::Stabilize { .. } => {
                  return Err(OnqError::InvalidOperation { message: "Stabilize operation should not be passed directly to apply_operation".to_string() });
