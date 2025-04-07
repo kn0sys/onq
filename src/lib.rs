@@ -9,12 +9,14 @@ pub mod core;
 pub mod operations;
 pub mod circuits;
 pub mod simulation;
+pub mod vm;
 
 // Re-export the most common types for easier top-level use
 pub use core::{QduId, PotentialityState, StableState, OnqError}; // Removed Qdu, ReferenceFrame unless needed publicly
 pub use operations::Operation;
 pub use circuits::{Circuit, CircuitBuilder};
 pub use simulation::{Simulator, SimulationResult};
+pub use vm::{Instruction, Program, ProgramBuilder};
 
 
 // Example 1: Single QDU Superposition and Stabilization

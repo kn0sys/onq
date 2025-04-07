@@ -16,6 +16,7 @@ use std::collections::hash_map::DefaultHasher;
 /// The core simulation engine that manages and evolves the potentiality state
 /// according to operations derived from framework principles.
 /// (Internal visibility)
+#[derive(Debug)]
 pub(crate) struct SimulationEngine {
     /// Maps QDU IDs to their index (0..N-1) in the ordered list used for the global state vector.
     qdu_indices: HashMap<QduId, usize>,
