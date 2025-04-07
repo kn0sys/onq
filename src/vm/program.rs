@@ -62,6 +62,54 @@ pub enum Instruction {
     Halt,
     /// No operation. Can be useful for padding or explicit delays if timing added later.
     NoOp,
+    /// Add `value` to the value in `r_src` and store in `r_dest`.
+
+    Addi {
+        r_dest: String,
+        r_src: String,
+        value: u64,
+    },
+    /// Add value in `r_src1` to value in `r_src2` and store in `r_dest`.
+    Add {
+        r_dest: String,
+        r_src1: String,
+        r_src2: String,
+    },
+    /// Perform bitwise NOT on value in `r_src` and store in `r_dest`.
+    Not {
+        r_dest: String,
+        r_src: String,
+    },
+    /// Perform bitwise AND on values in `r_src1`, `r_src2` and store in `r_dest`.
+    And {
+        r_dest: String,
+        r_src1: String,
+        r_src2: String,
+    },
+    /// Perform bitwise OR on values in `r_src1`, `r_src2` and store in `r_dest`.
+    Or {
+        r_dest: String,
+        r_src1: String,
+        r_src2: String,
+    },
+    /// Perform bitwise XOR on values in `r_src1`, `r_src2` and store in `r_dest`.
+    Xor {
+        r_dest: String,
+        r_src1: String,
+        r_src2: String,
+    },
+    /// Compare for equality: Set `r_dest` to 1 if `r_src1` == `r_src2`, else 0.
+    CmpEq {
+        r_dest: String,
+        r_src1: String,
+        r_src2: String,
+    },
+    /// Compare for greater than (unsigned): Set `r_dest` to 1 if `r_src1` > `r_src2`, else 0.
+    CmpGt {
+        r_dest: String,
+        r_src1: String,
+        r_src2: String,
+    },
 }
 
 // --- Program Structure ---
