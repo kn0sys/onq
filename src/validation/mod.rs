@@ -5,12 +5,17 @@
 use crate::core::{PotentialityState, OnqError};
 use num_complex::Complex;
 
+// Default tolerance values (can be overridden by caller)
+const DEFAULT_NORM_TOLERANCE: f64 = 1e-9;
+const DEFAULT_AMPLITUDE_TOLERANCE: f64 = 1e-12;
+const DEFAULT_COHERENCE_THRESHOLD: f64 = 0.618;
+
 // --- Helper Functions ---
 
-/// Helper to calculate the interpretive score (Phase Coherence) for a specific basis state k.
+/// Helper to calculate the interpretive (Phase Coherence) for a specific basis state k.
 /// Measures phase agreement with nearest neighbour basis states that have non-negligible amplitude.
-/// Returns a score between 0.0 and 1.0. (Adapted from SimulationEngine)
-fn calculate_pc_score_for_state_k(
+/// Returns a score between 0.0 and 1.0. (Internal to this module)
+fn calculate_c1_score_for_state_k(
     k: usize,
     state_vector: &[Complex<f64>],
     num_qdus: usize,
@@ -46,6 +51,7 @@ fn calculate_pc_score_for_state_k(
 
     if num_significant_neighbours == 0 {
          // No significant neighbours to compare phase with - consider it coherent by default?
+         // This happens for basis states in N=1 case or states with sparse neighbours.
          return 1.0;
     }
 
@@ -63,54 +69,61 @@ fn calculate_pc_score_for_state_k(
 ///
 /// # Arguments
 /// * `state` - The `PotentialityState` to check.
-/// * `tolerance` - Allowed deviation from 1.0 (e.g., 1e-9).
+/// * `tolerance` - Allowed deviation from 1.0 (e.g., 1e-9). Defaults are available.
 ///
 /// # Returns
 /// * `Ok(())` if normalized within tolerance.
 /// * `Err(OnqError::Incoherence)` if normalization fails.
-pub fn check_normalization(state: &PotentialityState, tolerance: f64) -> Result<(), OnqError> {
+pub fn check_normalization(state: &PotentialityState, tolerance: Option<f64>) -> Result<(), OnqError> {
+    let effective_tolerance = tolerance.unwrap_or(DEFAULT_NORM_TOLERANCE);
     let norm_sq: f64 = state.vector().iter().map(|c| c.norm_sqr()).sum();
-    if (norm_sq - 1.0).abs() > tolerance {
+    if (norm_sq - 1.0).abs() > effective_tolerance {
         Err(OnqError::Incoherence {
-            message: format!("State vector normalization failed. Sum(|c_i|^2) = {} (Deviation > {})", norm_sq, tolerance)
+            message: format!("State vector normalization failed. Sum(|c_i|^2) = {} (Deviation > {})", norm_sq, effective_tolerance)
         })
     } else {
         Ok(())
     }
 }
 
-/// Calculates a global measure of phase coherence based on interpretation.
-/// It computes the average score across all basis states, weighted by their amplitude squared.
+/// Calculates a global measure of phase coherence based on Omniscript C1 interpretation.
+/// It computes the average C1 score across all basis states, weighted by their amplitude squared.
 ///
 /// # Arguments
 /// * `state` - The `PotentialityState` to analyze.
 /// * `num_qdus` - The number of QDUs represented by the state vector.
-/// * `amplitude_tolerance` - Threshold below which amplitudes are considered negligible (e.g., 1e-12).
+/// * `amplitude_tolerance` - Optional threshold below which amplitudes are considered negligible.
 ///
 /// # Returns
 /// * A global coherence score between 0.0 and 1.0.
 pub fn calculate_global_phase_coherence(
     state: &PotentialityState,
     num_qdus: usize,
-    amplitude_tolerance: f64
+    amplitude_tolerance: Option<f64>,
 ) -> f64 {
+    let effective_amp_tolerance = amplitude_tolerance.unwrap_or(DEFAULT_AMPLITUDE_TOLERANCE);
     let state_vector = state.vector();
     let dim = state.dim();
     if dim == 0 || num_qdus == 0 { return 1.0; } // Empty or single state is coherent
 
     let mut total_weighted_coherence = 0.0;
-    let mut total_norm_sq = 0.0; // Recalculate for weighting, handles unnormalized states
+    let mut total_norm_sq = 0.0; // Recalculate for weighting, handles potentially unnormalized states
 
     for k in 0..dim {
         let amplitude_sq = state_vector[k].norm_sqr();
-        if amplitude_sq > amplitude_tolerance {
-             let score_c1_k = calculate_c1_score_for_state_k(k, state_vector, num_qdus, amplitude_tolerance);
+        if amplitude_sq > effective_amp_tolerance {
+             let score_c1_k = calculate_c1_score_for_state_k(
+                 k,
+                 state_vector,
+                 num_qdus,
+                 effective_amp_tolerance
+             );
              total_weighted_coherence += amplitude_sq * score_c1_k;
              total_norm_sq += amplitude_sq;
         }
     }
 
-    if total_norm_sq < amplitude_tolerance {
+    if total_norm_sq < effective_amp_tolerance {
         0.0 // State has negligible norm, considered incoherent
     } else {
         // Return the weighted average coherence score
@@ -118,14 +131,14 @@ pub fn calculate_global_phase_coherence(
     }
 }
 
-/// Checks if the state meets the Phase Coherence threshold (> threshold).
-/// Uses the global weighted average coherence score.
+/// Checks if the state meets the Omniscript C1 Phase Coherence threshold (> threshold).
+/// Uses the global weighted average coherence score calculated by `calculate_global_phase_coherence`.
 ///
 /// # Arguments
 /// * `state` - The `PotentialityState` to check.
 /// * `num_qdus` - The number of QDUs represented by the state vector.
-/// * `threshold` - The minimum required coherence score (e.g., 0.618).
-/// * `amplitude_tolerance` - Threshold for negligible amplitudes (e.g., 1e-12).
+/// * `threshold` - Optional minimum required coherence score (defaults to 0.618).
+/// * `amplitude_tolerance` - Optional threshold for negligible amplitudes.
 ///
 /// # Returns
 /// * `Ok(())` if the coherence threshold is met.
@@ -133,42 +146,52 @@ pub fn calculate_global_phase_coherence(
 pub fn check_phase_coherence(
     state: &PotentialityState,
     num_qdus: usize,
-    threshold: f64,
-    amplitude_tolerance: f64,
+    threshold: Option<f64>,
+    amplitude_tolerance: Option<f64>,
 ) -> Result<(), OnqError> {
-    let global_coherence = calculate_global_phase_coherence(state, num_qdus, amplitude_tolerance);
-    if global_coherence > threshold {
+    let effective_threshold = threshold.unwrap_or(DEFAULT_COHERENCE_THRESHOLD);
+    let effective_amp_tolerance = amplitude_tolerance.unwrap_or(DEFAULT_AMPLITUDE_TOLERANCE);
+
+    let global_coherence = calculate_global_phase_coherence(state, num_qdus, Some(effective_amp_tolerance));
+    if global_coherence > effective_threshold {
         Ok(())
     } else {
         Err(OnqError::Incoherence{
-            message: format!("Global Phase Coherence check failed. Score {} <= Threshold {}", global_coherence, threshold)
+            message: format!("Global Phase Coherence check failed (Omniscript C1 interpretation). Score {:.4} <= Threshold {:.4}", global_coherence, effective_threshold)
         })
     }
 }
 
-/// Performs a combined validation of the state based on interpreted
-criteria.
+/// Performs a combined validation of the state based on interpreted  criteria.
 /// Currently checks normalization and global phase coherence.
+/// Uses default tolerance values unless specified.
 ///
 /// # Arguments
 /// * `state` - The `PotentialityState` to validate.
 /// * `num_qdus` - The number of QDUs represented by the state vector.
-/// * `norm_tolerance` - Allowed deviation from 1.0 for normalization (e.g., 1e-9).
-/// * `coherence_threshold` - Minimum required global score (e.g., 0.618).
-/// * `amplitude_tolerance` - Threshold for negligible amplitudes (e.g., 1e-12).
+/// * `norm_tolerance` - Optional allowed deviation from 1.0 for normalization.
+/// * `coherence_threshold` - Optional minimum required global C1 score.
+/// * `amplitude_tolerance` - Optional threshold for negligible amplitudes.
 ///
 /// # Returns
 /// * `Ok(())` if all checks pass.
 /// * `Err(OnqError::Incoherence)` if any check fails.
-pub fn validate_state_uff(
+pub fn validate_state(
     state: &PotentialityState,
     num_qdus: usize,
-    norm_tolerance: f64,
-    coherence_threshold: f64,
-    amplitude_tolerance: f64,
+    norm_tolerance: Option<f64>,
+    coherence_threshold: Option<f64>,
+    amplitude_tolerance: Option<f64>,
 ) -> Result<(), OnqError> {
-    check_normalization(state, norm_tolerance)?;
-    check_phase_coherence(state, num_qdus, coherence_threshold, amplitude_tolerance)?;
-    // Future: Add checks related to (Frame Stability - if possible) or other interpretations.
+    // Use provided tolerances or defaults
+    let eff_norm_tol = norm_tolerance.unwrap_or(DEFAULT_NORM_TOLERANCE);
+    let eff_coh_thresh = coherence_threshold.unwrap_or(DEFAULT_COHERENCE_THRESHOLD);
+    let eff_amp_tol = amplitude_tolerance.unwrap_or(DEFAULT_AMPLITUDE_TOLERANCE);
+
+    // Perform checks
+    check_normalization(state, Some(eff_norm_tol))?;
+    check_phase_coherence(state, num_qdus, Some(eff_coh_thresh), Some(eff_amp_tol))?;
+
+    // Future: Add checks related to C2 (Frame Stability - if possible) or other C3 interpretations.
     Ok(())
 }

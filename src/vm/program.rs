@@ -8,6 +8,21 @@ use crate::operations::Operation;
 use std::collections::HashMap;
 use std::fmt;
 
+// Add this enum definition
+
+/// Specifies the target entangled state for a RelationalLock operation.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)] // Eq/Hash useful if used as keys later
+pub enum LockType {
+    /// Target state: |Φ+> = (1/sqrt(2))(|00> + |11>)
+    BellPhiPlus,
+    /// Target state: |Φ-> = (1/sqrt(2))(|00> - |11>)
+    BellPhiMinus,
+    /// Target state: |Ψ+> = (1/sqrt(2))(|01> + |10>)
+    BellPsiPlus,
+    /// Target state: |Ψ-> = (1/sqrt(2))(|01> - |10>)
+    BellPsiMinus,
+}
+
 // --- Instruction Set Definition ---
 
 /// Represents a single instruction executable by the ONQ-VM.
@@ -42,8 +57,6 @@ pub enum Instruction {
         register: String, // Register to check
         label: String,    // Label to jump to if register value is 0
     },
-    // Future: Could add BranchIfNotZero, etc.
-
     // --- Classical Operations (Minimal Initial Set) ---
     /// Load an immediate unsigned 64-bit integer value into a classical register.
     LoadImmediate {
@@ -245,6 +258,3 @@ impl ProgramBuilder {
         }
     }
 }
-
-// Re-export builder and program structures
-// (Done by defining them in mod.rs)

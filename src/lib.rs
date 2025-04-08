@@ -10,14 +10,20 @@ pub mod operations;
 pub mod circuits;
 pub mod simulation;
 pub mod vm;
+pub mod validation;
 
 // Re-export the most common types for easier top-level use
 pub use core::{QduId, PotentialityState, StableState, OnqError}; // Removed Qdu, ReferenceFrame unless needed publicly
 pub use operations::Operation;
 pub use circuits::{Circuit, CircuitBuilder};
 pub use simulation::{Simulator, SimulationResult};
-pub use vm::{Instruction, Program, ProgramBuilder};
-
+pub use vm::{Instruction, program::LockType, Program, ProgramBuilder};
+pub use validation::{
+    check_normalization,
+    check_phase_coherence,
+    calculate_global_phase_coherence, // Also export the calculator function
+    validate_state,
+};
 
 // Example 1: Single QDU Superposition and Stabilization
 // Demonstrates creating a superposition using a derived gate and observing

@@ -4,12 +4,12 @@
 //! Enables mixed classical/quantum computation based on UFF principles.
 
 // Declare modules
-mod program;
-mod interpreter; // Add this line
+pub mod program;
+mod interpreter;
 
 // Re-export public types from submodules
 pub use program::{Instruction, Program, ProgramBuilder};
-pub use interpreter::OnqVm; // Add this line
+pub use interpreter::OnqVm;
 
 // --- Keep other contents if any ---
 // (The code previously here, like Instruction/Program/Builder, should now be in program.rs)

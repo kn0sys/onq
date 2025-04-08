@@ -10,7 +10,7 @@
 
 // Import necessary types from the core module
 use crate::core::QduId;
-
+use crate::vm::program::LockType;
 /// Represents a defined operation within onq framework.
 ///
 /// Operations are derived from principles like:
@@ -91,12 +91,9 @@ pub enum Operation {
     RelationalLock {
         qdu1: QduId,
         qdu2: QduId,
-        /// Parameters defining the nature of the lock (e.g., target phase difference,
-        /// strength of coupling, type of reference established).
-        /// **Placeholder:** Using f64. Needs specific derivation from interaction rules.
-        lock_params: f64, // Example parameter, needs definition
-        /// Flag indicating if this establishes or removes the lock.
-        establish: bool,
+        /// The target integrated/entangled state type for the lock.
+        lock_type: LockType,
+        establish: bool, // If true, project onto lock state; if false, currently no-op.
     },
 
     /// Represents the Stabilization Protocol (SP).

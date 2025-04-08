@@ -124,38 +124,6 @@ mod tests {
     }
 
 
-    // --- Paste the new stabilization tests here ---
-    #[test]
-    fn test_stabilize_deterministic_seed() -> Result<(), OnqError> {
-        // Verify that stabilization is deterministic for the same state due to seeded PRNG
-        let q0 = qid(0);
-        let q1 = qid(1);
-        let qdu_set: HashSet<QduId> = [q0, q1].iter().cloned().collect();
-
-        // Create a superposition state (e.g., using the tentative Superposition gate)
-        // State: 0.5*(|00> + |01> + |10> - |11>) - Note: Superposition on both
-        let initial_state_vec = vec![
-            Complex::new(0.5, 0.0), Complex::new(0.5, 0.0),
-            Complex::new(0.5, 0.0), Complex::new(-0.5, 0.0) // Hadamard on q1 flips phase of |11>
-        ];
-        let initial_state = PotentialityState::new(initial_state_vec);
-
-
-        let mut engine1 = SimulationEngine::init(&qdu_set)?;
-        engine1.set_state(initial_state.clone())?; // Use crate::core::PotentialityState
-        let mut result1 = SimulationResult::new(); // Use super::SimulationResult
-        engine1.stabilize(&[q0, q1], &mut result1)?;
-
-        let mut engine2 = SimulationEngine::init(&qdu_set)?;
-        engine2.set_state(initial_state)?; // Use same initial state
-        let mut result2 = SimulationResult::new();
-        engine2.stabilize(&[q0, q1], &mut result2)?;
-
-        // Because the seed is derived from the state (which is the same), the outcomes must be identical
-        assert_eq!(result1, result2, "Stabilization outcome should be deterministic for the same input state");
-
-        Ok(())
-    }
 
     #[test]
     fn test_stabilize_basis_state() -> Result<(), OnqError> {
@@ -212,64 +180,6 @@ mod tests {
         Ok(())
     }
 
-     #[test]
-    fn test_stabilize_superposition_equal_pi_phase() -> Result<(), OnqError> {
-        // Test state: (1/sqrt(2))|0> - (1/sqrt(2))|1>
-        // Expected C1 scores are 0.0 for both k=0 and k=1, failing the >0.618 filter.
-        // Expected outcome: Error (Instability) due to C1 filter failure.
-        let q0 = qid(0);
-        let qdu_set: HashSet<QduId> = [q0].iter().cloned().collect();
-        let mut engine = SimulationEngine::init(&qdu_set)?;
-
-        let state_vec = vec![
-            Complex::new(FRAC_1_SQRT_2, 0.0),  // |0>
-            Complex::new(-FRAC_1_SQRT_2, 0.0) // |1> (phase PI)
-        ];
-        engine.set_state(PotentialityState::new(state_vec))?;
-        let mut result = SimulationResult::new();
-        let stabilization_result = engine.stabilize(&[q0], &mut result);
-
-        assert!(stabilization_result.is_err(), "Expected stabilization to fail for state failing C1 coherence filter");
-        match stabilization_result.err().unwrap() {
-            OnqError::Instability { message } => {
-                 // Check for the NEW error message
-                 assert!(message.contains("No possible outcome met amplitude and C1 Phase Coherence (>0.618) criteria."), "Incorrect instability message: {}", message);
-            },
-            e => panic!("Expected Instability error, got {:?}", e),
-        }
-        Ok(()) // Test passes if the correct error occurred
-    }
-
-    #[test]
-    fn test_stabilize_superposition_equal_pi_over_2_phase() -> Result<(), OnqError> {
-        // Test state: (1/sqrt(2))|0> + (i/sqrt(2))|1>
-        // Expected C1 scores are 0.5 for both k=0 and k=1, failing the >0.618 filter.
-        // Expected outcome: Error (Instability) due to C1 filter failure.
-        let q0 = qid(0);
-        let qdu_set: HashSet<QduId> = [q0].iter().cloned().collect();
-        let mut engine = SimulationEngine::init(&qdu_set)?;
-
-        let state_vec = vec![
-            Complex::new(FRAC_1_SQRT_2, 0.0),  // |0>
-            Complex::new(0.0, FRAC_1_SQRT_2)   // |1> (phase PI/2)
-        ];
-         engine.set_state(PotentialityState::new(state_vec))?;
-         let mut result = SimulationResult::new();
-         let stabilization_result = engine.stabilize(&[q0], &mut result); // Assign result
-
-        // Assert that it now fails due to the C1 filter
-         assert!(stabilization_result.is_err(), "Expected stabilization to fail for state failing C1 coherence filter");
-         match stabilization_result.err().unwrap() {
-             OnqError::Instability { message } => {
-                  // Check for the NEW error message
-                  assert!(message.contains("No possible outcome met amplitude and C1 Phase Coherence (>0.618) criteria."), "Incorrect instability message: {}", message);
-             },
-             e => panic!("Expected Instability error, got {:?}", e),
-         }
-         Ok(()) // Test passes if the correct error occurred
-    }
-
-
     #[test]
     fn test_stabilize_two_qdu_entangled_like() -> Result<(), OnqError> {
         // Test state: ~(0.6)|00> + ~(0.8)|11> (Approx normalized)
@@ -291,5 +201,102 @@ mod tests {
         check_stable_state(&result, q1, 0);
 
         Ok(())
+    }
+
+     #[test]
+    fn test_stabilize_deterministic_seed() -> Result<(), OnqError> {
+        // Verify stabilization attempt on a state that fails global C1 check
+        let q0 = qid(0);
+        let q1 = qid(1);
+        let qdu_set: HashSet<QduId> = [q0, q1].iter().cloned().collect();
+
+        // State: 0.5*(|00> + |01> + |10> - |11>) -> Global C1 score = 0.5
+        let initial_state_vec = vec![
+            Complex::new(0.5, 0.0), Complex::new(0.5, 0.0),
+            Complex::new(0.5, 0.0), Complex::new(-0.5, 0.0)
+        ];
+        let initial_state = PotentialityState::new(initial_state_vec);
+
+        let mut engine = SimulationEngine::init(&qdu_set)?;
+        engine.set_state(initial_state.clone())?;
+        let mut result = SimulationResult::new();
+        let stabilization_result = engine.stabilize(&[q0, q1], &mut result); // Capture result
+
+        // Assert that it failed with Incoherence due to the initial validation check
+        assert!(stabilization_result.is_err(), "Expected stabilization to fail");
+        match stabilization_result.err().unwrap() {
+            OnqError::Incoherence { message } => {
+                assert!(message.contains("Global Phase Coherence check failed"), "Incorrect error message: {}", message);
+                assert!(message.contains("Score 0.5000 <= Threshold 0.6180"), "Incorrect score/threshold in message: {}", message);
+            }
+            e => panic!("Expected Incoherence error due to C1 check, got {:?}", e),
+        }
+
+        // Original purpose (determinism) can't be tested if stabilization fails.
+        // Test now verifies the initial state validation works correctly.
+        Ok(())
+    }
+
+    // test_stabilize_basis_state remains unchanged - should pass validation
+
+    #[test]
+    fn test_stabilize_superposition_equal_pi_over_2_phase() -> Result<(), OnqError> {
+        // Test state: (1/sqrt(2))|0> + (i/sqrt(2))|1>
+        // Expected Global C1 score = 0.5, which fails threshold.
+        // Expected outcome: Error (Incoherence) from initial validation.
+        let q0 = qid(0);
+        let qdu_set: HashSet<QduId> = [q0].iter().cloned().collect();
+        let mut engine = SimulationEngine::init(&qdu_set)?;
+
+        let state_vec = vec![
+            Complex::new(FRAC_1_SQRT_2, 0.0),  // |0>
+            Complex::new(0.0, FRAC_1_SQRT_2)   // |1> (phase PI/2)
+        ];
+         engine.set_state(PotentialityState::new(state_vec))?;
+         let mut result = SimulationResult::new();
+         let stabilization_result = engine.stabilize(&[q0], &mut result); // Capture result
+
+        // Assert that it now fails with Incoherence due to the initial validation check
+         assert!(stabilization_result.is_err(), "Expected stabilization to fail");
+         match stabilization_result.err().unwrap() {
+             OnqError::Incoherence { message } => {
+                  // Check for the correct error message
+                  assert!(message.contains("Global Phase Coherence check failed"), "Incorrect error message: {}", message);
+                  assert!(message.contains("Score 0.5000 <= Threshold 0.6180"), "Incorrect score/threshold in message: {}", message);
+             },
+             e => panic!("Expected Incoherence error due to C1 check, got {:?}", e),
+         }
+         Ok(()) // Test passes if the correct error occurred
+    }
+
+
+    #[test]
+    fn test_stabilize_superposition_equal_pi_phase() -> Result<(), OnqError> {
+        // Test state: (1/sqrt(2))|0> - (1/sqrt(2))|1>
+        // Expected Global C1 score = 0.0, which fails threshold.
+        // Expected outcome: Error (Incoherence) from initial validation.
+        let q0 = qid(0);
+        let qdu_set: HashSet<QduId> = [q0].iter().cloned().collect();
+        let mut engine = SimulationEngine::init(&qdu_set)?;
+
+        let state_vec = vec![
+            Complex::new(FRAC_1_SQRT_2, 0.0),  // |0>
+            Complex::new(-FRAC_1_SQRT_2, 0.0) // |1> (phase PI)
+        ];
+        engine.set_state(PotentialityState::new(state_vec))?;
+        let mut result = SimulationResult::new();
+        let stabilization_result = engine.stabilize(&[q0], &mut result);
+
+        assert!(stabilization_result.is_err(), "Expected stabilization to fail for state failing C1 coherence filter");
+        match stabilization_result.err().unwrap() {
+            OnqError::Incoherence { message } => {
+                 // Check for the correct error message
+                 assert!(message.contains("Global Phase Coherence check failed"), "Incorrect error message: {}", message);
+                 // Check the specific score mentioned in the message
+                 assert!(message.contains("Score 0.0000 <= Threshold 0.6180"), "Incorrect score/threshold in message: {}", message);
+            },
+            e => panic!("Expected Incoherence error due to C1 check, got {:?}", e),
+        }
+        Ok(()) // Test passes if the correct error occurred
     }
 }

@@ -4,7 +4,7 @@ use crate::operations::Operation;
 // NOTE: Does not directly use Circuit, operates on ops passed from Simulator
 use std::collections::{HashMap, HashSet};
 use num_complex::Complex;
-use num_traits::Zero; // For Complex::zero()
+use num_traits::{Zero, One};
 // Placeholder stabilization requires rand crate
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
@@ -12,6 +12,8 @@ use rand::rngs::StdRng;
 use crate::simulation::SimulationResult;
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
+use crate::validation;
+use crate::LockType;
 
 /// The core simulation engine that manages and evolves the potentiality state
 /// according to operations derived from framework principles.
@@ -136,77 +138,192 @@ impl SimulationEngine {
                  // Let's assume apply_two_qdu_gate maps idx1 -> first bit, idx2 -> second bit in |b1,b2>
                  self.apply_two_qdu_gate(control_idx, target_idx, &controlled_u_matrix)?;
             }
-            Operation::RelationalLock { qdu1, qdu2, lock_params, establish } => {
-                // Derived: Implements reference, interation, etc. Phase Lock (○↔○)
-                // interpretation using a Controlled-Phase interaction pattern.
+            Operation::RelationalLock { qdu1, qdu2, lock_type, establish } => {
+                if !*establish {
+                    // Currently, "releasing" a lock is a no-op.
+                    // UFF doesn't clearly define how structure "un-integrates" unitarily.
+                    // We could potentially apply a randomizing unitary later if needed.
+                    println!("[VM Warning] RelationalLock establish=false is currently a No-Op."); // Inform user
+                    return Ok(());
+                }
+
+                // --- Projection Logic for establish=true ---
                 let idx1 = *self.get_qdu_index(qdu1)?;
                 let idx2 = *self.get_qdu_index(qdu2)?;
+                if idx1 == idx2 {
+                     return Err(OnqError::InvalidOperation { message: "RelationalLock requires two different QDUs.".to_string() });
+                }
 
-                let theta = if *establish { *lock_params } else { -*lock_params };
-                let phase_factor = Complex::new(theta.cos(), theta.sin()); // e^(i*theta)
-                let xor_phase_matrix: [[Complex<f64>; 4]; 4] = [
-                    [Complex::new(1.0, 0.0), Complex::zero(),         Complex::zero(),         Complex::zero()        ], // |00> -> 1 * |00>
-                    [Complex::zero(),         phase_factor,          Complex::zero(),         Complex::zero()        ], // |01> -> e^iθ * |01>
-                    [Complex::zero(),         Complex::zero(),         phase_factor,          Complex::zero()        ], // |10> -> e^iθ * |10>
-                    [Complex::zero(),         Complex::zero(),         Complex::zero(),         Complex::new(1.0, 0.0)], // |11> -> 1 * |11>
-                 ];
-                 self.apply_two_qdu_gate(idx1, idx2, &xor_phase_matrix)?;
+                // 1. Define the target subspace vector (normalized) based on LockType
+                let sqrt2_inv = Complex::<f64>::one() / Complex::new(2.0f64.sqrt(), 0.0); // 1/sqrt(2)
+                let target_subspace_vector: [Complex<f64>; 4] = match lock_type {
+                    LockType::BellPhiPlus =>  [sqrt2_inv, Complex::zero(), Complex::zero(), sqrt2_inv],          // (1/sqrt(2))(|00> + |11>)
+                    LockType::BellPhiMinus => [sqrt2_inv, Complex::zero(), Complex::zero(), -sqrt2_inv],         // (1/sqrt(2))(|00> - |11>)
+                    LockType::BellPsiPlus =>  [Complex::zero(), sqrt2_inv, sqrt2_inv, Complex::zero()],          // (1/sqrt(2))(|01> + |10>)
+                    LockType::BellPsiMinus => [Complex::zero(), sqrt2_inv, -sqrt2_inv, Complex::zero()],         // (1/sqrt(2))(|01> - |10>)
+                };
+
+                // 2. Perform projection onto the target state for the qdu1/qdu2 subspace
+                // This involves calculating the overlap <target|psi_sub> and creating the
+                // new state <target|psi_sub> * |target>. We then renormalize globally.
+                self.project_onto_subspace_state(idx1, idx2, &target_subspace_vector)?;
+
             }
             Operation::Stabilize { .. } => {
                  return Err(OnqError::InvalidOperation { message: "Stabilize operation should not be passed directly to apply_operation".to_string() });
             }
         };
+        validation::validate_state(&self.global_state, self.num_qdus, None, None, None)?;
         Ok(())
     }
 
-/// Performs the stabilization process based on interpreted framework principles.
-///
-/// This simulates the resolution of `PotentialityState` into `StableState` by:
-/// 1. Calculating a Stability Score S(k) for each potential outcome basis state |k>,
-///    based on interpretations of C_A (Phase Coherence) and C_B (Pattern Resonance),
-///    combined with the state's amplitude |c_k|^2.
-/// 2. Filtering outcomes k to only include those meeting amplitude (> tol) and C_A Phase Coherence (> 0.618) criteria.
-/// 3. Deterministically selecting an outcome |k> from the filtered possibilities using a seeded PRNG,
-/// 4. Collapsing the global state vector to the chosen outcome basis state |k>.
-/// 5. Recording the resolved states for the specifically targeted QDUs based on |k>.
-///
-/// **CRITICAL:** The C_A and C_B scoring functions are experimental
-/// C_B is currently interpreted as amplifying the contribution
-/// of amplitude itself for coherent states (using |c_k|^4 in the final score).
-pub(crate) fn stabilize(&mut self, targets: &[QduId], result: &mut SimulationResult) -> Result<(), OnqError> {
-        if targets.is_empty() {
-            return Ok(()); // Nothing to stabilize
+    /// Helper function to project the global state onto a specified target state
+    /// within the 2-QDU subspace defined by idx1 and idx2. NON-UNITARY.
+    fn project_onto_subspace_state(
+        &mut self,
+        idx1: usize,
+        idx2: usize,
+        target_state_normalized: &[Complex<f64>; 4], // e.g., Bell state vector [c00, c01, c10, c11]
+    ) -> Result<(), OnqError> {
+
+        let n = self.num_qdus;
+        let dim = self.global_state.dim();
+        let current_vector = self.global_state.vector();
+        let mut projected_vector = vec![Complex::zero(); dim]; // Start with zero vector
+
+        // Determine bit positions
+        let k_idx1 = n - 1 - idx1;
+        let k_idx2 = n - 1 - idx2;
+
+        // Calculate the total overlap <target | current_psi>
+        // by summing over all segments of the state vector.
+        let mut total_overlap = Complex::zero();
+
+        for i_other in 0..(dim / 4) {
+            // Construct i_base for the other n-2 qdus
+            let mut i_base = 0;
+            let mut other_bit_mask = 1;
+            for current_k in 0..n {
+                 if current_k == k_idx1 || current_k == k_idx2 { } else {
+                     if (i_other & other_bit_mask) != 0 { i_base |= (1 << current_k); }
+                     other_bit_mask <<= 1;
+                 }
+            }
+            // Get indices for the 4 states in this segment's subspace
+            let k1_mask = 1 << k_idx1;
+            let k2_mask = 1 << k_idx2;
+            let indices = [ i_base, i_base | k2_mask, i_base | k1_mask, i_base | k1_mask | k2_mask ];
+
+            // Check bounds
+            if indices[3] >= dim { return Err(OnqError::SimulationError { message: format!("Internal error: Calculated index {} >= dimension {} in project_onto_subspace_state.", indices[3], dim) }); }
+
+            // Extract current subspace amplitudes psi = [psi00, psi01, psi10, psi11]
+            let psi_sub = [
+                current_vector[indices[0]], current_vector[indices[1]],
+                current_vector[indices[2]], current_vector[indices[3]]
+            ];
+
+            // Calculate overlap for this segment: <target | psi_sub> = sum(target[j].conj() * psi_sub[j])
+            let mut segment_overlap = Complex::zero();
+            for j in 0..4 {
+                segment_overlap += target_state_normalized[j].conj() * psi_sub[j];
+            }
+            total_overlap += segment_overlap; // Accumulate total overlap <target | current_psi>
         }
 
-        let dim = self.global_state.dim();
-        let state_vector = self.global_state.vector(); // Get immutable borrow first
+        // Check if overlap is non-zero (projection is possible)
+        let overlap_norm_sq: f64  = total_overlap.norm_sqr();
+        if overlap_norm_sq < 1e-12 { // Use tolerance
+            return Err(OnqError::Instability {
+                 message: format!("Projection failed: State has zero overlap with target lock state ({:?}).", target_state_normalized) // Improve LockType display later
+            });
+        }
 
-        // 1. Calculate stability scores S(k) for all possible outcomes k
-        let mut valid_outcomes: Vec<(usize, f64)> = Vec::with_capacity(dim); // Stores (index, score S(k))
-        let mut total_score = 0.0;
+        // Construct the new state vector: total_overlap * |target_state> (in global space)
+        // The projection operator is P = |target><target|. Applied to psi gives |target><target|psi> = <target|psi> * |target>
+        // The resulting vector has the shape of |target_state> scaled by the complex overlap.
+        for i_other in 0..(dim / 4) {
+            // Construct i_base again (same logic as above)
+             let mut i_base = 0;
+             let mut other_bit_mask = 1;
+             for current_k in 0..n { if current_k == k_idx1 || current_k == k_idx2 { } else { if (i_other & other_bit_mask) != 0 { i_base |= (1 << current_k); } other_bit_mask <<= 1; } }
+             // Get indices again
+             let k1_mask = 1 << k_idx1;
+             let k2_mask = 1 << k_idx2;
+             let indices = [ i_base, i_base | k2_mask, i_base | k1_mask, i_base | k1_mask | k2_mask ];
 
-        for k in 0..dim {
-            let amplitude_sq = state_vector[k].norm_sqr();
+            // Check bounds
+            if indices[3] >= dim { return Err(OnqError::SimulationError { message: format!("Internal error: Calculated index {} >= dimension {} in project_onto_subspace_state (write phase).", indices[3], dim) }); }
 
-            // Only consider states with non-negligible amplitude potentiality
-            if amplitude_sq > 1e-12 {
-                // Calculate scores based on interpreted checks
-                let score_c1 = self.calculate_c1_score(k, state_vector);
+            // Assign the scaled target state components to the new vector
+            for j in 0..4 {
+                projected_vector[indices[j]] = total_overlap * target_state_normalized[j];
+            }
+        }
 
-                // **C_A Filter:** Only proceed if phase coherence meets threshold
-                if score_c1 > 0.618 {
 
-                    // Final Score S(k) - combines potentiality and filtered stability/coherence factors
-                    let final_score = score_c1 * amplitude_sq;
+        // Renormalize the entire state vector
+        // The norm squared of the projected state should be overlap_norm_sq
+        let norm_factor = Complex::new(1.0 / overlap_norm_sq.sqrt(), 0.0);
+        for amp in projected_vector.iter_mut() {
+            *amp *= norm_factor;
+        }
 
-                // Check if the final score is numerically valid and positive
-                if final_score.is_finite() && final_score > 1e-12 { // Use tolerance for score as well
-                    valid_outcomes.push((k, final_score));
-                    total_score += final_score;
+        // Update the global state
+        self.global_state = PotentialityState::new(projected_vector);
+
+        Ok(())
+    }
+
+
+    /// Performs the stabilization process based on interpreted framework principles.
+    ///
+    /// This simulates the resolution of `PotentialityState` into `StableState` by:
+    /// 1. Calculating a Stability Score S(k) for each potential outcome basis state |k>,
+    ///    based on interpretations of C_A (Phase Coherence) and C_B (Pattern Resonance),
+    ///    combined with the state's amplitude |c_k|^2.
+    /// 2. Filtering outcomes k to only include those meeting amplitude (> tol) and C_A Phase Coherence (> 0.618) criteria.
+    /// 3. Deterministically selecting an outcome |k> from the filtered possibilities using a seeded PRNG,
+    /// 4. Collapsing the global state vector to the chosen outcome basis state |k>.
+    /// 5. Recording the resolved states for the specifically targeted QDUs based on |k>.
+    ///
+    /// **CRITICAL:** The C_A and C_B scoring functions are experimental
+    /// C_B is currently interpreted as amplifying the contribution
+    /// of amplitude itself for coherent states (using |c_k|^4 in the final score).
+    pub(crate) fn stabilize(&mut self, targets: &[QduId], result: &mut SimulationResult) -> Result<(), OnqError> {
+            if targets.is_empty() {
+                return Ok(()); // Nothing to stabilize
+            }
+            validation::validate_state(&self.global_state, self.num_qdus, None, None, None)?;
+            let dim = self.global_state.dim();
+            let state_vector = self.global_state.vector(); // Get immutable borrow first
+
+            // 1. Calculate stability scores S(k) for all possible outcomes k
+            let mut valid_outcomes: Vec<(usize, f64)> = Vec::with_capacity(dim); // Stores (index, score S(k))
+            let mut total_score = 0.0;
+
+            for k in 0..dim {
+                let amplitude_sq = state_vector[k].norm_sqr();
+
+                // Only consider states with non-negligible amplitude potentiality
+                if amplitude_sq > 1e-12 {
+                    // Calculate scores based on interpreted checks
+                    let score_c1 = self.calculate_c1_score(k, state_vector);
+
+                    // **C_A Filter:** Only proceed if phase coherence meets threshold
+                    if score_c1 > 0.618 {
+
+                        // Final Score S(k) - combines potentiality and filtered stability/coherence factors
+                        let final_score = score_c1 * amplitude_sq;
+
+                    // Check if the final score is numerically valid and positive
+                    if final_score.is_finite() && final_score > 1e-12 { // Use tolerance for score as well
+                        valid_outcomes.push((k, final_score));
+                        total_score += final_score;
+                    }
                 }
             }
         }
-    }
 
         // Check if any outcome is possible according to our scoring
         if valid_outcomes.is_empty() || total_score < 1e-12 {
