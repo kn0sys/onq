@@ -86,7 +86,7 @@ pub fn check_normalization(state: &PotentialityState, tolerance: Option<f64>) ->
     }
 }
 
-/// Calculates a global measure of phase coherence based on Omniscript C1 interpretation.
+/// Calculates a global measure of phase coherence.
 /// It computes the average C1 score across all basis states, weighted by their amplitude squared.
 ///
 /// # Arguments
@@ -131,7 +131,7 @@ pub fn calculate_global_phase_coherence(
     }
 }
 
-/// Checks if the state meets the Omniscript C1 Phase Coherence threshold (> threshold).
+/// Checks if the state meets the Phase Coherence threshold (> threshold).
 /// Uses the global weighted average coherence score calculated by `calculate_global_phase_coherence`.
 ///
 /// # Arguments
@@ -157,7 +157,7 @@ pub fn check_phase_coherence(
         Ok(())
     } else {
         Err(OnqError::Incoherence{
-            message: format!("Global Phase Coherence check failed (Omniscript C1 interpretation). Score {:.4} <= Threshold {:.4}", global_coherence, effective_threshold)
+            message: format!("Global Phase Coherence check failed. Score {:.4} <= Threshold {:.4}", global_coherence, effective_threshold)
         })
     }
 }
