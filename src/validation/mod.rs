@@ -162,36 +162,35 @@ pub fn check_phase_coherence(
     }
 }
 
-/// Performs a combined validation of the state based on interpreted  criteria.
-/// Currently checks normalization and global phase coherence.
+/// Performs basic validation checks on the state based on criteria.
+/// Currently only checks normalization. Coherence checks may be applied elsewhere (e.g., pre-stabilization).
 /// Uses default tolerance values unless specified.
 ///
 /// # Arguments
 /// * `state` - The `PotentialityState` to validate.
-/// * `num_qdus` - The number of QDUs represented by the state vector.
+/// * `num_qdus` - The number of QDUs represented by the state vector. (Currently unused here)
 /// * `norm_tolerance` - Optional allowed deviation from 1.0 for normalization.
-/// * `coherence_threshold` - Optional minimum required global C1 score.
-/// * `amplitude_tolerance` - Optional threshold for negligible amplitudes.
+/// * `coherence_threshold` - Optional: Currently UNUSED in this function.
+/// * `amplitude_tolerance` - Optional: Currently UNUSED in this function.
 ///
 /// # Returns
 /// * `Ok(())` if all checks pass.
 /// * `Err(OnqError::Incoherence)` if any check fails.
 pub fn validate_state(
     state: &PotentialityState,
-    num_qdus: usize,
+    _num_qdus: usize, // Keep param for API consistency for now
     norm_tolerance: Option<f64>,
-    coherence_threshold: Option<f64>,
-    amplitude_tolerance: Option<f64>,
+    _coherence_threshold: Option<f64>, // Mark as unused
+    _amplitude_tolerance: Option<f64>, // Mark as unused
 ) -> Result<(), OnqError> {
     // Use provided tolerances or defaults
     let eff_norm_tol = norm_tolerance.unwrap_or(DEFAULT_NORM_TOLERANCE);
-    let eff_coh_thresh = coherence_threshold.unwrap_or(DEFAULT_COHERENCE_THRESHOLD);
-    let eff_amp_tol = amplitude_tolerance.unwrap_or(DEFAULT_AMPLITUDE_TOLERANCE);
+    // let eff_coh_thresh = coherence_threshold.unwrap_or(DEFAULT_COHERENCE_THRESHOLD);
+    // let eff_amp_tol = amplitude_tolerance.unwrap_or(DEFAULT_AMPLITUDE_TOLERANCE);
 
     // Perform checks
     check_normalization(state, Some(eff_norm_tol))?;
-    check_phase_coherence(state, num_qdus, Some(eff_coh_thresh), Some(eff_amp_tol))?;
+    // REMOVED: check_phase_coherence(state, num_qdus, Some(eff_coh_thresh), Some(eff_amp_tol))?;
 
-    // Future: Add checks related to C2 (Frame Stability - if possible) or other C3 interpretations.
     Ok(())
 }

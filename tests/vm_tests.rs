@@ -1,8 +1,8 @@
 // tests/vm_tests.rs
 
-use onq::core::{OnqError, QduId, StableState};
+use onq::core::QduId;
 use onq::operations::Operation;
-use onq::vm::{Instruction, Program, ProgramBuilder, OnqVm}; // Import VM components
+use onq::vm::{Instruction, ProgramBuilder, OnqVm}; // Import VM components
 
 // Helper for QduId creation
 fn qid(id: u64) -> QduId {
@@ -14,11 +14,11 @@ fn test_vm_classical_loop() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Test: ONQ-VM Classical Loop ---");
     // Program: Counts from 0 up to (but not including) 5 in register "count"
     let program = ProgramBuilder::new()
-        .add(Instruction::LoadImmediate { register: "count".to_string(), value: 0 })
-        .add(Instruction::LoadImmediate { register: "limit".to_string(), value: 5 })
-        .add(Instruction::Label("loop_start".to_string()))
+        .pb_add(Instruction::LoadImmediate { register: "count".to_string(), value: 0 })
+        .pb_add(Instruction::LoadImmediate { register: "limit".to_string(), value: 5 })
+        .pb_add(Instruction::Label("loop_start".to_string()))
         // Condition check: is count == limit?
-        .add(Instruction::CmpEq {
+        .pb_add(Instruction::CmpEq {
             r_dest: "cond".to_string(),
             r_src1: "count".to_string(),
             r_src2: "limit".to_string(),
@@ -26,20 +26,20 @@ fn test_vm_classical_loop() -> Result<(), Box<dyn std::error::Error>> {
         // If cond is NOT zero (i.e., count == limit), branch to end
         // Need BranchIfNotZero, let's use BranchIfZero inverted logic for now:
         // BranchIfZero checks if cond == 0 (i.e. count != limit). Jump *past* the end jump if true.
-        .add(Instruction::BranchIfZero { register: "cond".to_string(), label: "continue_loop".to_string() })
+        .pb_add(Instruction::BranchIfZero { register: "cond".to_string(), label: "continue_loop".to_string() })
         // If cond was 1 (count == limit), we don't branch, so jump to end
-        .add(Instruction::Jump("loop_end".to_string()))
-        .add(Instruction::Label("continue_loop".to_string()))
+        .pb_add(Instruction::Jump("loop_end".to_string()))
+        .pb_add(Instruction::Label("continue_loop".to_string()))
         // Increment count
-        .add(Instruction::Addi {
+        .pb_add(Instruction::Addi {
             r_dest: "count".to_string(),
             r_src: "count".to_string(),
             value: 1,
         })
         // Jump back to loop start
-        .add(Instruction::Jump("loop_start".to_string()))
-        .add(Instruction::Label("loop_end".to_string()))
-        .add(Instruction::Halt)
+        .pb_add(Instruction::Jump("loop_start".to_string()))
+        .pb_add(Instruction::Label("loop_end".to_string()))
+        .pb_add(Instruction::Halt)
         .build()?; // Use ? to propagate potential build error
 
     println!("Program:\n{}", program);
@@ -63,31 +63,31 @@ fn test_vm_conditional_quantum() -> Result<(), Box<dyn std::error::Error>> {
     // Expected (based on prior tests): Stabilizing |> yields 0. Flip *should* occur.
     let program = ProgramBuilder::new()
         // Prepare |> state on q0
-        .add(Instruction::QuantumOp(Operation::InteractionPattern {
+        .pb_add(Instruction::QuantumOp(Operation::InteractionPattern {
             target: qid(0),
             pattern_id: "Superposition".to_string(),
         }))
         // Stabilize q0
-        .add(Instruction::Stabilize { targets: vec![qid(0)] })
+        .pb_add(Instruction::Stabilize { targets: vec![qid(0)] })
         // Record outcome in register "m0"
-        .add(Instruction::Record { qdu: qid(0), register: "m0".to_string() })
+        .pb_add(Instruction::Record { qdu: qid(0), register: "m0".to_string() })
         // Branch to "apply_flip" label IF "m0" is Zero
-        .add(Instruction::BranchIfZero { register: "m0".to_string(), label: "apply_flip".to_string() })
+        .pb_add(Instruction::BranchIfZero { register: "m0".to_string(), label: "apply_flip".to_string() })
         // If "m0" was non-zero (i.e., 1), skip the flip by jumping past it
-        .add(Instruction::Jump("after_flip".to_string()))
+        .pb_add(Instruction::Jump("after_flip".to_string()))
         // --- Apply Flip Block ---
-        .add(Instruction::Label("apply_flip".to_string()))
-        .add(Instruction::QuantumOp(Operation::InteractionPattern {
+        .pb_add(Instruction::Label("apply_flip".to_string()))
+        .pb_add(Instruction::QuantumOp(Operation::InteractionPattern {
             target: qid(1), // Target q1
             pattern_id: "QualityFlip".to_string(),
         }))
         // --- End of Apply Flip Block ---
-        .add(Instruction::Label("after_flip".to_string()))
+        .pb_add(Instruction::Label("after_flip".to_string()))
         // Stabilize q1 to see the result
-        .add(Instruction::Stabilize { targets: vec![qid(1)] })
+        .pb_add(Instruction::Stabilize { targets: vec![qid(1)] })
         // Record q1's outcome in register "m1"
-        .add(Instruction::Record { qdu: qid(1), register: "m1".to_string() })
-        .add(Instruction::Halt)
+        .pb_add(Instruction::Record { qdu: qid(1), register: "m1".to_string() })
+        .pb_add(Instruction::Halt)
         .build()?;
 
     println!("Program:\n{}", program);

@@ -76,6 +76,12 @@ impl SimulationEngine {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn get_state(&self) -> &PotentialityState {
+        // engine is guaranteed to be Some if called within a test after init
+        &self.global_state
+    }
+
     // Add a crate-visible method to set the state directly for testing
     #[cfg(test)] // Only compile this function when running tests
     pub(crate) fn set_state(&mut self, state: PotentialityState) -> Result<(), OnqError> {
@@ -141,7 +147,7 @@ impl SimulationEngine {
             Operation::RelationalLock { qdu1, qdu2, lock_type, establish } => {
                 if !*establish {
                     // Currently, "releasing" a lock is a no-op.
-                    // UFF doesn't clearly define how structure "un-integrates" unitarily.
+                    // ONQ clearly define how structure "un-integrates" unitarily.
                     // We could potentially apply a randomizing unitary later if needed.
                     println!("[VM Warning] RelationalLock establish=false is currently a No-Op."); // Inform user
                     return Ok(());
@@ -173,7 +179,7 @@ impl SimulationEngine {
                  return Err(OnqError::InvalidOperation { message: "Stabilize operation should not be passed directly to apply_operation".to_string() });
             }
         };
-        validation::validate_state(&self.global_state, self.num_qdus, None, None, None)?;
+        validation::check_normalization(&self.global_state, None)?;
         Ok(())
     }
 
@@ -205,7 +211,7 @@ impl SimulationEngine {
             let mut other_bit_mask = 1;
             for current_k in 0..n {
                  if current_k == k_idx1 || current_k == k_idx2 { } else {
-                     if (i_other & other_bit_mask) != 0 { i_base |= (1 << current_k); }
+                     if (i_other & other_bit_mask) != 0 { i_base |= 1 << current_k; }
                      other_bit_mask <<= 1;
                  }
             }
@@ -246,7 +252,7 @@ impl SimulationEngine {
             // Construct i_base again (same logic as above)
              let mut i_base = 0;
              let mut other_bit_mask = 1;
-             for current_k in 0..n { if current_k == k_idx1 || current_k == k_idx2 { } else { if (i_other & other_bit_mask) != 0 { i_base |= (1 << current_k); } other_bit_mask <<= 1; } }
+             for current_k in 0..n { if current_k == k_idx1 || current_k == k_idx2 { } else { if (i_other & other_bit_mask) != 0 { i_base |= 1 << current_k; } other_bit_mask <<= 1; } }
              // Get indices again
              let k1_mask = 1 << k_idx1;
              let k2_mask = 1 << k_idx2;
@@ -396,30 +402,29 @@ impl SimulationEngine {
     /// Applies a 2x2 matrix operation targeting a single QDU within the global state vector.
     /// Assumes standard tensor product structure for the global state vector.
     fn apply_single_qdu_gate(&mut self, target_idx: usize, matrix: &[[Complex<f64>; 2]; 2]) -> Result<(), OnqError> {
-        let k = self.num_qdus - 1 - target_idx; // Bit position (from right, 0-based)
-        let k_mask = 1 << k; // Mask for the target bit
-        let lower_mask = k_mask - 1; // Mask for bits to the right
-        let upper_mask = !((k_mask << 1) - 1); // Mask for bits to the left
+        let n = self.num_qdus;
+        let k = n - 1 - target_idx; // Bit position (0 to n-1, from right)
+        let k_mask = 1 << k;
 
         let dim = self.global_state.dim();
-        let mut new_vec = vec![Complex::zero(); dim]; // Store results temporarily
+        let mut new_vec = vec![Complex::zero(); dim];
 
-        // Iterate over pairs of basis states differing only at the target QDU's position
-        for i in 0..dim / 2 {
-            // Calculate indices for |...0...> and |...1...> states for the target QDU
-            // Combines upper bits, lower bits, and inserts 0 or 1 at the target position k
-            let i0_raw = ((i & upper_mask) << 1) | (i & lower_mask);
-            let i1_raw = i0_raw | k_mask;
+        for i in 0..dim / 2 { // i represents the bit pattern for the n-1 qubits *other* than target k
+            // Calculate i0_raw: insert a 0 at bit position k into the pattern i
+            let lower_part = i & ((1 << k) - 1); // Bits of i below position k
+            let upper_part = i & !((1 << k) - 1); // Bits of i at or above position k
+            let i0_raw = (upper_part << 1) | lower_part; // Shift upper part left by 1, make space, OR in lower part
 
-            // Ensure indices are within bounds (robustness check)
-             if i0_raw >= dim || i1_raw >= dim {
-                 return Err(OnqError::SimulationError { message: format!("Calculated index out of bounds during single QDU gate application. i0={}, i1={}, dim={}", i0_raw, i1_raw, dim) });
-             }
+            let i1_raw = i0_raw | k_mask; // Set the k-th bit to 1
 
-            let psi_0 = self.global_state.vector()[i0_raw]; // Amplitude for |...target=0...>
-            let psi_1 = self.global_state.vector()[i1_raw]; // Amplitude for |...target=1...>
+            // Bounds check (optional but safe)
+            if i1_raw >= dim { // Only need to check i1_raw as it's the largest
+                return Err(OnqError::SimulationError { message: format!("Internal error: Calculated index {} >= dimension {} in apply_single_qdu_gate.", i1_raw, dim) });
+            }
 
-            // Apply the 2x2 matrix: [psi_0', psi_1'] = matrix * [psi_0, psi_1]
+            let psi_0 = self.global_state.vector()[i0_raw];
+            let psi_1 = self.global_state.vector()[i1_raw];
+
             new_vec[i0_raw] = matrix[0][0] * psi_0 + matrix[0][1] * psi_1;
             new_vec[i1_raw] = matrix[1][0] * psi_0 + matrix[1][1] * psi_1;
         }
@@ -427,7 +432,6 @@ impl SimulationEngine {
         self.global_state = PotentialityState::new(new_vec);
         Ok(())
     }
-
     /// Gets the 2x2 matrix for a given interaction pattern ID.
     /// These matrices represent fundamental interaction patterns (`P_op`) derived
     /// from framework principles, interpreted as transformations on the

@@ -1,7 +1,7 @@
 // src/vm/mod.rs
 
 //! Defines the structures and interpreter for the ONQ Virtual Machine (ONQ-VM).
-//! Enables mixed classical/quantum computation based on UFF principles.
+//! Enables mixed classical/quantum computation.
 
 // Declare modules
 pub mod program;

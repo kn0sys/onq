@@ -30,174 +30,118 @@ Unlike conventional quantum computing libraries (like Cirq or Qiskit) which are 
 
 examples/demo.rs
 ```rust
-//! Succinct examples demonstrating building and simulating circuits
+//! Example: Quantum Teleportation using the ONQ-VM.
+//! Demonstrates preparing an entangled pair, Bell measurement,
+//! recording results to classical registers, and applying conditional
+//! recovery operations based on the classical results.
 
-use onq::{
-    CircuitBuilder, Operation, QduId, Simulator, OnqError
-};
-use std::f64::consts::PI;
+use onq::core::QduId;
+use onq::operations::Operation;
+use onq::vm::{Instruction, OnqVm, ProgramBuilder}; // Import VM components
 
-// Helper for QduId creation for brevity in examples
-fn qid(id: u64) -> QduId { QduId(id) }
+// Helper for QduId creation
+fn qid(id: u64) -> QduId {
+    QduId(id)
+}
 
-fn main() -> Result<(), OnqError> {
-    println!("--- onq Library Example ---");
+fn main() -> Result<(), Box<dyn std::error::Error>> { // Use Box<dyn Error> for main
+    println!("--- ONQ-VM Example: Quantum Teleportation (with Classical Control) ---");
 
-    // Create a single simulator instance to run all examples
-    let simulator = Simulator::new();
+    // Define QDUs
+    let msg_q = qid(0);
+    let alice_q = qid(1);
+    let bob_q = qid(2);
 
-    // --- Example 1: Single QDU Superposition & Stabilization ---
-    // Demonstrates preparing a superposition using a derived gate and observing
-    // the outcome.
-    println!("--- Example 1: Single QDU Superposition ---");
-    let q0_ex1 = qid(0);
-    let circuit1 = CircuitBuilder::new()
-        .add_op(Operation::InteractionPattern {
-            target: q0_ex1,
-            // Uses the tentatively derived "Hadamard-like" pattern
+    // --- Build the Teleportation Program ---
+    let program = ProgramBuilder::new()
+        // 1. Prepare Message state |+>
+        .pb_add(Instruction::QuantumOp(Operation::InteractionPattern {
+            target: msg_q,
             pattern_id: "Superposition".to_string(),
-        })
-        .add_op(Operation::Stabilize { targets: vec![q0_ex1] })
-        .build();
-
-    println!("Circuit 1 Definition:\n{}", circuit1);
-    match simulator.run(&circuit1) {
-        Ok(result) => {
-            println!("Circuit 1 Result:\n{}", result);
-            // Analysis Comment: Based on current (phase_coherence)>0.618 filter and
-            // S(k) = Score*|c_k|^4 scoring (interpreting  via amplitude),
-            // the state (1/sqrt(2))[|0> + |1>] has Score_C=1.0 for both k=0, k=1.
-            // S(0) = 1.0 * (0.5)^2 = 0.25, S(1) = 1.0 * (0.5)^2 = 0.25.
-            // Scores are equal, outcome depends deterministically on state hash + PRNG.
-            // We just check *an* outcome is produced.
-            assert!(result.get_stable_state(&q0_ex1).is_some(), "Expected a stable state for q0");
-            println!("Analysis: Outcome depends on deterministic PRNG seeded by state hash (scores S(0)=S(1)=0.25).\n");
-        },
-        Err(e) => println!("Circuit 1 Failed: {}\n", e),
-    }
-
-    // --- Example 2: Two QDU Bell State Analog & Stabilization ---
-    // Demonstrates creating an entangled-like state using derived controlled logic
-    // and observing the correlated outcomes.
-    println!("--- Example 2: Two QDU Bell State (|00> + |11>) Analog Prep ---");
-    let q0_ex2 = qid(0);
-    let q1_ex2 = qid(1);
-    let circuit2 = CircuitBuilder::new()
-        // 1. Create superposition on control q0 -> (1/sqrt(2))(|00> + |10>)
-        .add_op(Operation::InteractionPattern {
-            target: q0_ex2,
+        }))
+        // 2. Create Bell pair |Φ+> between Alice and Bob
+        .pb_add(Instruction::QuantumOp(Operation::InteractionPattern {
+            target: alice_q,
             pattern_id: "Superposition".to_string(),
+        }))
+        .pb_add(Instruction::QuantumOp(Operation::ControlledInteraction {
+            control: alice_q,
+            target: bob_q,
+            pattern_id: "QualityFlip".to_string(),
+        }))
+        // 3. Alice's Bell measurement basis change
+        .pb_add(Instruction::QuantumOp(Operation::ControlledInteraction {
+            control: msg_q,
+            target: alice_q,
+            pattern_id: "QualityFlip".to_string(),
+        }))
+        .pb_add(Instruction::QuantumOp(Operation::InteractionPattern {
+            target: msg_q,
+            pattern_id: "Superposition".to_string(),
+        }))
+        // 4. Stabilize Alice's qubits and Record results
+        .pb_add(Instruction::Stabilize { targets: vec![msg_q, alice_q] })
+        .pb_add(Instruction::Record { qdu: msg_q,   register: "m_msg".to_string() })
+        .pb_add(Instruction::Record { qdu: alice_q, register: "m_alice".to_string() })
+
+        // 5. Bob's Classical Corrections (Conditional Operations)
+        // 5a. X Correction based on Alice's measurement (m_alice)
+        .pb_add(Instruction::Label("X_Correction".to_string())) // Label for clarity
+        .pb_add(Instruction::BranchIfZero { // If m_alice == 0, jump past X gate
+            register: "m_alice".to_string(),
+            label: "skip_x_corr".to_string(),
         })
-        // 2. Apply controlled flip (CNOT analog using derived logic)
-        //    If q0=|0>, target q1 unchanged. If q0=|1>, target q1 flips.
-        //    Result state: (1/sqrt(2))(|00> + |11>)
-        .add_op(Operation::ControlledInteraction {
-            control: q0_ex2,
-            target: q1_ex2,
-            pattern_id: "QualityFlip".to_string(), // Use derived flip
+        .pb_add(Instruction::QuantumOp(Operation::InteractionPattern { // Apply X if m_alice == 1
+            target: bob_q,
+            pattern_id: "QualityFlip".to_string(),
+        }))
+        .pb_add(Instruction::Label("skip_x_corr".to_string()))
+
+        // 5b. Z Correction based on Message measurement (m_msg)
+        .pb_add(Instruction::Label("Z_Correction".to_string())) // Label for clarity
+        .pb_add(Instruction::BranchIfZero { // If m_msg == 0, jump past Z gate
+            register: "m_msg".to_string(),
+            label: "skip_z_corr".to_string(),
         })
-        .add_op(Operation::Stabilize { targets: vec![q0_ex2, q1_ex2] })
-        .build();
+        .pb_add(Instruction::QuantumOp(Operation::InteractionPattern { // Apply Z if m_msg == 1
+            target: bob_q,
+            pattern_id: "PhaseIntroduce".to_string(),
+        }))
+        .pb_add(Instruction::Label("skip_z_corr".to_string()))
 
-    println!("Circuit 2 Definition:\n{}", circuit2);
-    match simulator.run(&circuit2) {
-        Ok(result) => {
-            println!("Circuit 2 Result:\n{}", result);
-            // Analysis Comment: Input state to stabilize is (1/sqrt(2))[|00> + |11>]
-            // Check scores for k=0 (|00>) and k=3 (|11>). Others are 0 amplitude.
-            // S(0): C=1 (neighbours 0 amp), S(0) = 1 * (0.5)^2 = 0.25
-            // S(3): C=1 (neighbours 0 amp), S(3) = 1 * (0.5)^2 = 0.25
-            // Outcome depends deterministically on PRNG seeded by state hash.
-            // Importantly, the outcomes for q0 and q1 should be *correlated*.
-            let outcome0 = result.get_stable_state(&q0_ex2).and_then(|s| s.get_resolved_value());
-            let outcome1 = result.get_stable_state(&q1_ex2).and_then(|s| s.get_resolved_value());
-            assert!(outcome0.is_some() && outcome1.is_some(), "Expected stable states for both qdus");
-            assert_eq!(outcome0, outcome1, "Outcomes for Bell state analog should be correlated (both 0 or both 1)");
-            println!("Analysis: Outcome depends on deterministic PRNG (scores S(0)=S(3)=0.25). Outcomes must be correlated ({} == {}).\n", outcome0.unwrap_or(9), outcome1.unwrap_or(9));
+        // 6. Stabilize Bob's qubit (optional, to verify outcome)
+        .pb_add(Instruction::Stabilize { targets: vec![bob_q] })
+        .pb_add(Instruction::Record { qdu: bob_q, register: "m_bob".to_string() })
 
-        },
-        Err(e) => println!("Circuit 2 Failed: {}\n", e),
-    }
+        // 7. Halt
+        .pb_add(Instruction::Halt)
+        .build()?; // Build the program
 
-    // --- Example 3: Phase Gate Sequence ---
-    // Demonstrates applying various derived phase manipulation operations.
-    println!("--- Example 3: Single QDU Phase Gate Sequence ---");
-    let q0_ex3 = qid(0);
-    let circuit3 = CircuitBuilder::new()
-        .add_op(Operation::InteractionPattern { target: q0_ex3, pattern_id: "Superposition".to_string()}) // Start in |+> state
-        .add_op(Operation::InteractionPattern { target: q0_ex3, pattern_id: "HalfPhase".to_string()})      // Apply S analog
-        .add_op(Operation::InteractionPattern { target: q0_ex3, pattern_id: "QuarterPhase".to_string()})   // Apply T analog
-        .add_op(Operation::InteractionPattern { target: q0_ex3, pattern_id: "HalfPhase_Inv".to_string()})   // Apply Sdg analog
-        .add_op(Operation::InteractionPattern { target: q0_ex3, pattern_id: "PhaseIntroduce".to_string()})// Apply Z analog
-        .add_op(Operation::Stabilize { targets: vec![q0_ex3] })
-        .build();
+    // Print the program instructions
+    println!("\nTeleportation Program Instructions:\n{}", program);
 
-    println!("Circuit 3 Definition:\n{}", circuit3);
-    match simulator.run(&circuit3) {
-        Ok(result) => {
-            println!("Circuit 3 Result:\n{}", result);
-            // Analysis: Complex phase changes occur. Final state depends on matrix math.
-            // Stabilization outcome depends on final state's amplitudes and C score.
-            assert!(result.get_stable_state(&q0_ex3).is_some(), "Expected a stable state for q0");
-            println!("Analysis: Outcome depends on final state after phase gates and stabilization scoring.\n");
-        },
-        Err(e) => println!("Circuit 3 Failed: {}\n", e),
-    }
+    // --- Run the ONQ-VM ---
+    let mut vm = OnqVm::new();
+    println!("Running ONQ-VM...");
+    vm.run(&program)?; // Execute the program
 
-    // --- Example 4: Phi Rotation ---
-    // Demonstrates the operation derived from the Golden Ratio.
-    println!("--- Example 4: Single QDU Phi Rotation ---");
-    let q0_ex4 = qid(0);
-    let circuit4 = CircuitBuilder::new()
-        .add_op(Operation::InteractionPattern {
-            target: q0_ex4,
-            pattern_id: "PhiRotate".to_string(), // Use φ derived rotation
-        }) // Applies rotation by PI/PHI to |0>
-        .add_op(Operation::Stabilize { targets: vec![q0_ex4] })
-        .build();
+    // --- Analyze Results ---
+    println!("\n--- ONQ-VM Execution Finished ---");
+    let final_mem = vm.get_classical_memory();
+    println!("Final Classical Memory: {:?}", final_mem);
 
-    println!("Circuit 4 Definition:\n{}", circuit4);
-    match simulator.run(&circuit4) {
-        Ok(result) => {
-            println!("Circuit 4 Result:\n{}", result);
-            // Analysis: Results in a specific superposition cos(a)|0> + sin(a)|1>.
-            // Stabilization outcome depends on amplitudes and C1 score for this state.
-             assert!(result.get_stable_state(&q0_ex4).is_some(), "Expected a stable state for q0");
-             println!("Analysis: Outcome depends on state after Phi rotation and stabilization scoring.\n");
-        },
-        Err(e) => println!("Circuit 4 Failed: {}\n", e),
-    }
+    let m_msg = vm.get_classical_register("m_msg");
+    let m_alice = vm.get_classical_register("m_alice");
+    let m_bob = vm.get_classical_register("m_bob");
 
-     // --- Example 5: Relational Lock (CPhase) ---
-     // Demonstrates applying the derived CPhase interpretation of RelationalLock.
-     println!("--- Example 5: Two QDU Relational Lock (CPhase PI/2) ---");
-     let q0_ex5 = qid(0);
-     let q1_ex5 = qid(1);
-     let circuit5 = CircuitBuilder::new()
-         .add_op(Operation::InteractionPattern { target: q0_ex5, pattern_id: "Superposition".to_string() }) // |+>
-         .add_op(Operation::InteractionPattern { target: q1_ex5, pattern_id: "Superposition".to_string() }) // |+> -> State |++>
-         // State is now 0.5*(|00>+|01>+|10>+|11>)
-         .add_op(Operation::RelationalLock {
-             qdu1: q0_ex5,
-             qdu2: q1_ex5,
-             lock_params: PI / 2.0, // Apply phase PI/2 (factor of i)
-             establish: true,
-         }) // Should only affect |11> component -> 0.5*(|00>+|01>+|10>+i*|11>)
-         .add_op(Operation::Stabilize { targets: vec![q0_ex5, q1_ex5] })
-         .build();
-
-     println!("Circuit 5 Definition:\n{}", circuit5);
-     match simulator.run(&circuit5) {
-         Ok(result) => {
-            println!("Circuit 5 Result:\n{}", result);
-            // Analysis: Stabilization outcome depends on scores for the final state.
-            // All basis states have equal amplitude magnitude (0.5^2 = 0.25).
-             assert!(result.get_stable_state(&q0_ex5).is_some(), "Expected a stable state for q0");
-             assert!(result.get_stable_state(&q1_ex5).is_some(), "Expected a stable state for q1");
-             println!("Analysis: Outcome depends on complex interplay of C scores for state 0.5*(|00>+|01>+|10>+i|11>).\n");
-         },
-         Err(e) => println!("Circuit 5 Failed: {}\n", e),
-     }
+    println!("\nAnalysis:");
+    println!("- Alice's measurement outcomes (classical bits sent): msg={}, alice={}", m_msg, m_alice);
+    println!("- Bob's final stabilized state: {}", m_bob);
+    println!("- Verification Notes:");
+    println!("  - Input state for Message QDU was |+>.");
+    println!("  - Teleportation *should* transfer |+> state to Bob's QDU *before* final stabilization.");
+    println!("  - Stabilizing |+> state deterministically yields 0 or 1 based on rules (observed outcome: {}).", m_bob);
+    println!("  - Perfect verification requires state vector access/tomography.");
 
     Ok(())
 }
@@ -205,68 +149,104 @@ fn main() -> Result<(), OnqError> {
 Outputs:
 
 ```bash
---- onq Library Example ---
---- Example 1: Single QDU Superposition ---
-Circuit 1 Definition:
-onq::Circuit[2 operations on 1 QDUs]
-QDU(0): ───H──────M───
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running `target/debug/examples/vm_teleportation`
+--- ONQ-VM Example: Quantum Teleportation (with Classical Control) ---
 
-Circuit 1 Result:
-Simulation Results:
-  Stable Outcomes:
-    QDU(0): Stable(0)
+Teleportation Program Instructions:
+ONQ-VM Program (15 instructions)
+  0000: QuantumOp(InteractionPattern { target: QduId(0), pattern_id: "Superposition" })
+  0001: QuantumOp(InteractionPattern { target: QduId(1), pattern_id: "Superposition" })
+  0002: QuantumOp(ControlledInteraction { control: QduId(1), target: QduId(2), pattern_id: "QualityFlip" })
+  0003: QuantumOp(ControlledInteraction { control: QduId(0), target: QduId(1), pattern_id: "QualityFlip" })
+  0004: QuantumOp(InteractionPattern { target: QduId(0), pattern_id: "Superposition" })
+  0005: Stabilize { targets: [QduId(0), QduId(1)] }
+  0006: Record { qdu: QduId(0), register: "m_msg" }
+  0007: Record { qdu: QduId(1), register: "m_alice" }
+X_Correction:
+  0008: BranchIfZero { register: "m_alice", label: "skip_x_corr" }
+  0009: QuantumOp(InteractionPattern { target: QduId(2), pattern_id: "QualityFlip" })
+Z_Correction:
+  0010: BranchIfZero { register: "m_msg", label: "skip_z_corr" }
+  0011: QuantumOp(InteractionPattern { target: QduId(2), pattern_id: "PhaseIntroduce" })
+skip_z_corr:
+  0012: Stabilize { targets: [QduId(2)] }
+  0013: Record { qdu: QduId(2), register: "m_bob" }
+  0014: Halt
 
-Analysis: Outcome depends on deterministic PRNG seeded by state hash (scores S(0)=S(1)=0.25).
+Running ONQ-VM...
+[VM RUN START]
+[VM Engine Initialized for {QduId(1), QduId(2), QduId(0)}]
+[VM] PC=0000 Fetching...
+[VM] PC=0000 Executing: QuantumOp(InteractionPattern { target: QduId(0), pattern_id: "Superposition" })
+[VM] PC=0001 Fetching...
+[VM] PC=0001 Executing: QuantumOp(InteractionPattern { target: QduId(1), pattern_id: "Superposition" })
+[VM] PC=0002 Fetching...
+[VM] PC=0002 Executing: QuantumOp(ControlledInteraction { control: QduId(1), target: QduId(2), pattern_id: "QualityFlip" })
+[VM] PC=0003 Fetching...
+[VM] PC=0003 Executing: QuantumOp(ControlledInteraction { control: QduId(0), target: QduId(1), pattern_id: "QualityFlip" })
+[VM] PC=0004 Fetching...
+[VM] PC=0004 Executing: QuantumOp(InteractionPattern { target: QduId(0), pattern_id: "Superposition" })
+[VM] PC=0005 Fetching...
+[VM] PC=0005 Executing: Stabilize { targets: [QduId(0), QduId(1)] }
+[VM] PC=0005 Calling engine.stabilize for [QduId(0), QduId(1)]
+[VM] PC=0005 engine.stabilize finished. Temp result: SimulationResult { stable_outcomes: {QduId(0): ResolvedQuality(0), QduId(1): ResolvedQuality(1)} }
+[VM] PC=0005 Stabilize: QDU QDU(0), State ResolvedQuality(0), Resolved Value: Some(0)
+[VM] PC=0005 Stabilize: QDU QDU(1), State ResolvedQuality(1), Resolved Value: Some(1)
+[VM] PC=0005 Stored last_stabilization_outcomes: {QduId(0): 0, QduId(1): 1}
+[VM] PC=0006 Fetching...
+[VM] PC=0006 Executing: Record { qdu: QduId(0), register: "m_msg" }
+[VM] PC=0006 Attempting to record for QDU QDU(0)
+[VM] PC=0006 Current last_stabilization_outcomes: {QduId(0): 0, QduId(1): 1}
+[VM] PC=0006 Value Option for QDU QDU(0): Some(0)
+[VM] PC=0006 Recording value 0 to register 'm_msg'
+[VM] PC=0006 Classical memory now: {"m_msg": 0}
+[VM] PC=0007 Fetching...
+[VM] PC=0007 Executing: Record { qdu: QduId(1), register: "m_alice" }
+[VM] PC=0007 Attempting to record for QDU QDU(1)
+[VM] PC=0007 Current last_stabilization_outcomes: {QduId(0): 0, QduId(1): 1}
+[VM] PC=0007 Value Option for QDU QDU(1): Some(1)
+[VM] PC=0007 Recording value 1 to register 'm_alice'
+[VM] PC=0007 Classical memory now: {"m_alice": 1, "m_msg": 0}
+[VM] PC=0008 Fetching...
+[VM] PC=0008 Executing: BranchIfZero { register: "m_alice", label: "skip_x_corr" }
+[VM] PC=0008 BranchIfZero: Reg 'm_alice' = 1
+[VM] PC=0008 Branch not taken.
+[VM] PC=0009 Fetching...
+[VM] PC=0009 Executing: QuantumOp(InteractionPattern { target: QduId(2), pattern_id: "QualityFlip" })
+[VM] PC=0010 Fetching...
+[VM] PC=0010 Executing: BranchIfZero { register: "m_msg", label: "skip_z_corr" }
+[VM] PC=0010 BranchIfZero: Reg 'm_msg' = 0
+[VM] PC=0010 Branch taken to label 'skip_z_corr' (PC=12)
+[VM] PC=0012 Fetching...
+[VM] PC=0012 Executing: Stabilize { targets: [QduId(2)] }
+[VM] PC=0012 Calling engine.stabilize for [QduId(2)]
+[VM] PC=0012 engine.stabilize finished. Temp result: SimulationResult { stable_outcomes: {QduId(2): ResolvedQuality(1)} }
+[VM] PC=0012 Stabilize: QDU QDU(2), State ResolvedQuality(1), Resolved Value: Some(1)
+[VM] PC=0012 Stored last_stabilization_outcomes: {QduId(2): 1}
+[VM] PC=0013 Fetching...
+[VM] PC=0013 Executing: Record { qdu: QduId(2), register: "m_bob" }
+[VM] PC=0013 Attempting to record for QDU QDU(2)
+[VM] PC=0013 Current last_stabilization_outcomes: {QduId(2): 1}
+[VM] PC=0013 Value Option for QDU QDU(2): Some(1)
+[VM] PC=0013 Recording value 1 to register 'm_bob'
+[VM] PC=0013 Classical memory now: {"m_bob": 1, "m_alice": 1, "m_msg": 0}
+[VM] PC=0014 Fetching...
+[VM] PC=0014 Executing: Halt
+[VM] PC=0014 Halting.
+[VM RUN END]
 
---- Example 2: Two QDU Bell State (|00> + |11>) Analog Prep ---
-Circuit 2 Definition:
-onq::Circuit[3 operations on 2 QDUs]
-QDU(0): ───H──────@──────M───
-                  │          
-QDU(1): ──────────X──────M───
+--- ONQ-VM Execution Finished ---
+Final Classical Memory: {"m_bob": 1, "m_alice": 1, "m_msg": 0}
 
-Circuit 2 Result:
-Simulation Results:
-  Stable Outcomes:
-    QDU(0): Stable(1)
-    QDU(1): Stable(1)
-
-Analysis: Outcome depends on deterministic PRNG (scores S(0)=S(3)=0.25). Outcomes must be correlated (1 == 1).
-
---- Example 3: Single QDU Phase Gate Sequence ---
-Circuit 3 Definition:
-onq::Circuit[6 operations on 1 QDUs]
-QDU(0): ───H──────S──────T─────S†──────Z──────M───
-
-Circuit 3 Failed: Instability Violation: Stabilization failed: No possible outcome met amplitude and C1 Phase Coherence (>0.618) criteria.
-
---- Example 4: Single QDU Phi Rotation ---
-Circuit 4 Definition:
-onq::Circuit[2 operations on 1 QDUs]
-QDU(0): ──ΦR──────M───
-
-Circuit 4 Result:
-Simulation Results:
-  Stable Outcomes:
-    QDU(0): Stable(1)
-
-Analysis: Outcome depends on state after Phi rotation and stabilization scoring.
-
---- Example 5: Two QDU Relational Lock (CPhase PI/2) ---
-Circuit 5 Definition:
-onq::Circuit[4 operations on 2 QDUs]
-QDU(0): ───H─────────────@──────M───
-                         │          
-QDU(1): ──────────H──────●──────M───
-
-Circuit 5 Result:
-Simulation Results:
-  Stable Outcomes:
-    QDU(0): Stable(0)
-    QDU(1): Stable(0)
-
-Analysis: Outcome depends on complex interplay of C scores for state 0.5*(|00>+|01>+|10>+i|11>).
-
+Analysis:
+- Alice's measurement outcomes (classical bits sent): msg=0, alice=1
+- Bob's final stabilized state: 1
+- Verification Notes:
+  - Input state for Message QDU was |+>.
+  - Teleportation *should* transfer |+> state to Bob's QDU *before* final stabilization.
+  - Stabilizing |+> state deterministically yields 0 or 1 based on rules (observed outcome: 1).
+  - Perfect verification requires state vector access/tomography.
 ```
 
 ## Notebooks

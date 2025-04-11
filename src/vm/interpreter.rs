@@ -3,12 +3,10 @@
 //! Defines the ONQ Virtual Machine (ONQ-VM) interpreter.
 
 use super::program::{Instruction, Program}; // Use super to access sibling module
-use crate::core::{QduId, StableState, PotentialityState, OnqError};
-use crate::operations::Operation;
+use crate::core::{QduId, OnqError};
 use crate::simulation::engine::SimulationEngine; // Use pub(crate) engine
 use crate::simulation::SimulationResult; // Needed temporarily for stabilize call
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 
 /// The ONQ Virtual Machine (ONQ-VM).
 ///
@@ -199,8 +197,6 @@ impl OnqVm {
     //
     //     Ok(())
     // }
-
-
     pub fn run(&mut self, program: &Program) -> Result<(), OnqError> {
         self.reset();
         println!("[VM RUN START]"); // DEBUG
@@ -323,7 +319,7 @@ impl OnqVm {
                      println!("[VM] PC={:04} Copy: Reg '{}' = {} from Reg '{}'", pc, dest_reg, value, source_reg); // DEBUG
                     self.classical_memory.insert(dest_reg.clone(), value);
                 }
-                Instruction::Add { r_dest, r_src1, r_src2 } => {
+                Instruction::OnqAdd { r_dest, r_src1, r_src2 } => {
                     let val1 = self.classical_memory.get(r_src1).copied().unwrap_or(0);
                     let val2 = self.classical_memory.get(r_src2).copied().unwrap_or(0);
                     self.classical_memory.insert(r_dest.clone(), val1.wrapping_add(val2));
@@ -334,7 +330,7 @@ impl OnqVm {
                      println!("[VM] PC={:04} Addi: Reg '{}' = {} + {} = {}", pc, r_dest, val_src, value, result); // DEBUG
                     self.classical_memory.insert(r_dest.clone(), result);
                 }
-                Instruction::Not { r_dest, r_src } => {
+                Instruction::OnqNot { r_dest, r_src } => {
                     let val_src = self.classical_memory.get(r_src).copied().unwrap_or(0);
                     self.classical_memory.insert(r_dest.clone(), !val_src); // Bitwise NOT
                 }

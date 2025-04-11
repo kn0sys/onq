@@ -3,7 +3,7 @@
 //! Defines the structures and interpreter for the ONQ Virtual Machine (ONQ-VM).
 //! Enables mixed classical/quantum computation based on ONQ principles.
 
-use crate::core::{QduId, OnqError};
+use crate::core::QduId;
 use crate::operations::Operation;
 use std::collections::HashMap;
 use std::fmt;
@@ -76,20 +76,19 @@ pub enum Instruction {
     /// No operation. Can be useful for padding or explicit delays if timing added later.
     NoOp,
     /// Add `value` to the value in `r_src` and store in `r_dest`.
-
     Addi {
         r_dest: String,
         r_src: String,
         value: u64,
     },
     /// Add value in `r_src1` to value in `r_src2` and store in `r_dest`.
-    Add {
+    OnqAdd {
         r_dest: String,
         r_src1: String,
         r_src2: String,
     },
     /// Perform bitwise NOT on value in `r_src` and store in `r_dest`.
-    Not {
+    OnqNot {
         r_dest: String,
         r_src: String,
     },
@@ -139,7 +138,7 @@ pub struct Program {
 
 impl Program {
     /// Creates an empty program. Internal use; use ProgramBuilder.
-    fn new() -> Self {
+    fn _new() -> Self {
         Program {
             instructions: Vec::new(),
             label_map: HashMap::new(),
@@ -197,7 +196,7 @@ impl ProgramBuilder {
     }
 
     /// Adds an instruction to the program sequence.
-    pub fn add(mut self, instruction: Instruction) -> Self {
+    pub fn pb_add(mut self, instruction: Instruction) -> Self {
         // Check if this instruction is a label definition
         if let Instruction::Label(label_name) = &instruction {
             let current_pc = self.instructions.len();
@@ -206,7 +205,7 @@ impl ProgramBuilder {
                 eprintln!("Warning: Duplicate label definition '{}' at PC {}", label_name, current_pc);
             }
             // Resolve pending jumps to this label (though labels should ideally be defined before use)
-            if let Some(pcs) = self.pending_labels.remove(label_name) {
+            if let Some(_pcs) = self.pending_labels.remove(label_name) {
                  // This logic isn't right for resolving forward jumps if label defined later.
                  // Let's build first, resolve at the end.
                  // We'll just record the label position here.
@@ -224,7 +223,7 @@ impl ProgramBuilder {
         I: IntoIterator<Item = Instruction>,
      {
          for instruction in instructions {
-            self = self.add(instruction); // Reuse single add logic
+            self = self.pb_add(instruction); // Reuse single add logic
          }
          self
      }

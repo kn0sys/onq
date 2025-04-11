@@ -203,14 +203,15 @@ mod tests {
         Ok(())
     }
 
-     #[test]
+    #[test]
     fn test_stabilize_deterministic_seed() -> Result<(), OnqError> {
-        // Verify stabilization attempt on a state that fails global C1 check
+        // State: 0.5*(|00> + |01> + |10> - |11>)
+        // Only outcome k=0 (|00>) passes filter (score=1.0). Stabilization should succeed.
+        println!("\n--- Test: Stabilize state where only one outcome passes filter ---");
         let q0 = qid(0);
         let q1 = qid(1);
         let qdu_set: HashSet<QduId> = [q0, q1].iter().cloned().collect();
 
-        // State: 0.5*(|00> + |01> + |10> - |11>) -> Global C1 score = 0.5
         let initial_state_vec = vec![
             Complex::new(0.5, 0.0), Complex::new(0.5, 0.0),
             Complex::new(0.5, 0.0), Complex::new(-0.5, 0.0)
@@ -218,32 +219,35 @@ mod tests {
         let initial_state = PotentialityState::new(initial_state_vec);
 
         let mut engine = SimulationEngine::init(&qdu_set)?;
-        engine.set_state(initial_state.clone())?;
+        engine.set_state(initial_state)?;
         let mut result = SimulationResult::new();
-        let stabilization_result = engine.stabilize(&[q0, q1], &mut result); // Capture result
+        // Apply stabilize - should now succeed as k=0 is a valid outcome
+        engine.stabilize(&[q0, q1], &mut result)?;
 
-        // Assert that it failed with Incoherence due to the initial validation check
-        assert!(stabilization_result.is_err(), "Expected stabilization to fail");
-        match stabilization_result.err().unwrap() {
-            OnqError::Incoherence { message } => {
-                assert!(message.contains("Global Phase Coherence check failed"), "Incorrect error message: {}", message);
-                assert!(message.contains("Score 0.5000 <= Threshold 0.6180"), "Incorrect score/threshold in message: {}", message);
-            }
-            e => panic!("Expected Incoherence error due to C1 check, got {:?}", e),
-        }
+        // Assert outcome is k=0 (|00>)
+        check_stable_state(&result, q0, 0);
+        check_stable_state(&result, q1, 0);
 
-        // Original purpose (determinism) can't be tested if stabilization fails.
-        // Test now verifies the initial state validation works correctly.
+        // Check determinism (redundant now, but keep for structure)
+        let mut engine2 = SimulationEngine::init(&qdu_set)?;
+        engine2.set_state(engine.get_state().clone())?; // Use the *final* state from engine1? No, use initial state again
+        engine2.set_state(PotentialityState::new( // Reset to exact initial state for comparison
+             vec![Complex::new(0.5, 0.0), Complex::new(0.5, 0.0), Complex::new(0.5, 0.0), Complex::new(-0.5, 0.0)]
+        ))?;
+        let mut result2 = SimulationResult::new();
+        engine2.stabilize(&[q0, q1], &mut result2)?;
+        assert_eq!(result, result2, "Stabilization outcome should be deterministic for the same input state");
+
+
         Ok(())
     }
-
-    // test_stabilize_basis_state remains unchanged - should pass validation
 
     #[test]
     fn test_stabilize_superposition_equal_pi_over_2_phase() -> Result<(), OnqError> {
         // Test state: (1/sqrt(2))|0> + (i/sqrt(2))|1>
-        // Expected Global C1 score = 0.5, which fails threshold.
-        // Expected outcome: Error (Incoherence) from initial validation.
+        // Expected C1 score = 0.5 for both k=0, k=1. Neither passes >0.618 filter.
+        // Expected outcome: Error (Instability) because no outcome is valid.
+        println!("\n--- Test: Stabilize state failing filter for all outcomes (PI/2 phase) ---");
         let q0 = qid(0);
         let qdu_set: HashSet<QduId> = [q0].iter().cloned().collect();
         let mut engine = SimulationEngine::init(&qdu_set)?;
@@ -256,25 +260,25 @@ mod tests {
          let mut result = SimulationResult::new();
          let stabilization_result = engine.stabilize(&[q0], &mut result); // Capture result
 
-        // Assert that it now fails with Incoherence due to the initial validation check
+        // Assert that it now fails with Instability because NO outcome passed C1 filter
          assert!(stabilization_result.is_err(), "Expected stabilization to fail");
          match stabilization_result.err().unwrap() {
-             OnqError::Incoherence { message } => {
-                  // Check for the correct error message
-                  assert!(message.contains("Global Phase Coherence check failed"), "Incorrect error message: {}", message);
-                  assert!(message.contains("Score 0.5000 <= Threshold 0.6180"), "Incorrect score/threshold in message: {}", message);
+             OnqError::Instability { message } => {
+                  // Check for the specific Instability error message
+                  let expected_msg = "Stabilization failed: No possible outcome met amplitude and C1 Phase Coherence (>0.618) criteria.";
+                  assert_eq!(message, expected_msg, "Incorrect instability message");
              },
-             e => panic!("Expected Incoherence error due to C1 check, got {:?}", e),
+             e => panic!("Expected Instability error due to no valid outcomes, got {:?}", e),
          }
          Ok(()) // Test passes if the correct error occurred
     }
 
-
     #[test]
     fn test_stabilize_superposition_equal_pi_phase() -> Result<(), OnqError> {
         // Test state: (1/sqrt(2))|0> - (1/sqrt(2))|1>
-        // Expected Global C1 score = 0.0, which fails threshold.
-        // Expected outcome: Error (Incoherence) from initial validation.
+        // Expected C1 score = 0.0 for both k=0, k=1. Neither passes >0.618 filter.
+        // Expected outcome: Error (Instability) because no outcome is valid.
+        println!("\n--- Test: Stabilize state failing filter for all outcomes (PI phase) ---");
         let q0 = qid(0);
         let qdu_set: HashSet<QduId> = [q0].iter().cloned().collect();
         let mut engine = SimulationEngine::init(&qdu_set)?;
@@ -287,15 +291,13 @@ mod tests {
         let mut result = SimulationResult::new();
         let stabilization_result = engine.stabilize(&[q0], &mut result);
 
-        assert!(stabilization_result.is_err(), "Expected stabilization to fail for state failing C1 coherence filter");
+        assert!(stabilization_result.is_err(), "Expected stabilization to fail");
         match stabilization_result.err().unwrap() {
-            OnqError::Incoherence { message } => {
-                 // Check for the correct error message
-                 assert!(message.contains("Global Phase Coherence check failed"), "Incorrect error message: {}", message);
-                 // Check the specific score mentioned in the message
-                 assert!(message.contains("Score 0.0000 <= Threshold 0.6180"), "Incorrect score/threshold in message: {}", message);
+            OnqError::Instability { message } => {
+                 // Check for the specific Instability error message
+                 assert!(message.contains("No possible outcome met amplitude and C1 Phase Coherence (>0.618) criteria."), "Incorrect instability message: {}", message);
             },
-            e => panic!("Expected Incoherence error due to C1 check, got {:?}", e),
+            e => panic!("Expected Instability error due to no valid outcomes, got {:?}", e),
         }
         Ok(()) // Test passes if the correct error occurred
     }
