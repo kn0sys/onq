@@ -330,6 +330,16 @@ impl OnqVm {
                      println!("[VM] PC={:04} Addi: Reg '{}' = {} + {} = {}", pc, r_dest, val_src, value, result); // DEBUG
                     self.classical_memory.insert(r_dest.clone(), result);
                 }
+                Instruction::Sub { r_dest, r_src1, r_src2 } => {
+                    let val1 = self.classical_memory.get(r_src1).copied().unwrap_or(0);
+                    let val2 = self.classical_memory.get(r_src2).copied().unwrap_or(0);
+                    self.classical_memory.insert(r_dest.clone(), val1.wrapping_sub(val2));
+                }
+                Instruction::Mul { r_dest, r_src1, r_src2 } => {
+                    let val1 = self.classical_memory.get(r_src1).copied().unwrap_or(0);
+                    let val2 = self.classical_memory.get(r_src2).copied().unwrap_or(0);
+                    self.classical_memory.insert(r_dest.clone(), val1.wrapping_mul(val2));
+                 }
                 Instruction::OnqNot { r_dest, r_src } => {
                     let val_src = self.classical_memory.get(r_src).copied().unwrap_or(0);
                     self.classical_memory.insert(r_dest.clone(), !val_src); // Bitwise NOT
@@ -356,8 +366,12 @@ impl OnqVm {
                      println!("[VM] PC={:04} CmpEq: Reg '{}' = ({} == {}) = {}", pc, r_dest, val1, val2, result); // DEBUG
                     self.classical_memory.insert(r_dest.clone(), result);
                 }
+                Instruction::CmpLt { r_dest, r_src1, r_src2 } => {
+                    let val1 = self.classical_memory.get(r_src1).copied().unwrap_or(0);
+                    let val2 = self.classical_memory.get(r_src2).copied().unwrap_or(0);
+                    self.classical_memory.insert(r_dest.clone(), if val1 < val2 { 1 } else { 0 });
+                }
                 // Add similar println! for other classical ops if needed
-
                 Instruction::Halt => {
                      println!("[VM] PC={:04} Halting.", pc); // DEBUG
                     self.is_halted = true;

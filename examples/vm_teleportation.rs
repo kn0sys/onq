@@ -5,8 +5,7 @@
 
 use onq::core::QduId;
 use onq::operations::Operation;
-use onq::vm::{Instruction, OnqVm, ProgramBuilder}; // Import VM components
-
+use onq::vm::{Instruction, OnqVm, ProgramBuilder};
 // Helper for QduId creation
 fn qid(id: u64) -> QduId {
     QduId(id)

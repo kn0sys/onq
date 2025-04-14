@@ -21,7 +21,7 @@ pub use vm::{Instruction, program::LockType, Program, ProgramBuilder};
 pub use validation::{
     check_normalization,
     check_phase_coherence,
-    calculate_global_phase_coherence, // Also export the calculator function
+    calculate_global_phase_coherence,
     validate_state,
 };
 

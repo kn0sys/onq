@@ -110,6 +110,18 @@ pub enum Instruction {
         r_src1: String,
         r_src2: String,
     },
+    /// Subtract value in `r_src2` from value in `r_src1` and store in `r_dest` (wrapping).
+    Sub {
+        r_dest: String,
+        r_src1: String,
+        r_src2: String,
+    },
+    /// Multiply value in `r_src1` by value in `r_src2` and store in `r_dest` (wrapping).
+    Mul {
+        r_dest: String,
+        r_src1: String,
+        r_src2: String,
+    },
     /// Compare for equality: Set `r_dest` to 1 if `r_src1` == `r_src2`, else 0.
     CmpEq {
         r_dest: String,
@@ -122,6 +134,11 @@ pub enum Instruction {
         r_src1: String,
         r_src2: String,
     },
+    CmpLt {
+        r_dest: String,
+        r_src1: String,
+        r_src2: String,
+     },
 }
 
 // --- Program Structure ---
