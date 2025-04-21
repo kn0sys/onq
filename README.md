@@ -1,252 +1,143 @@
-# onq: Operations for Next-generation Quantum Computing
+# onq: Operations for Next Generation Quantum Computing
 
-## Overview
+[![crates.io](https://img.shields.io/crates/v/onq.svg)](https://crates.io/crates/onq) [![docs.rs](https://docs.rs/onq/badge.svg)](https://docs.rs/onq) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
 
-`onq` is a Rust library for exploring quantum computation and information processing
+`onq` is a Rust library for simulating quantum computation and information processing derived **strictly from the theoretical first principles**.
 
-Unlike conventional quantum computing libraries (like Cirq or Qiskit) which are based on the postulates of quantum mechanics, `onq` attempts to simulate computational dynamics as they emerge *necessarily* from reality. The goal is to model phenomena analogous to quantum computation (like superposition, entanglement, interference, measurement/stabilization) without assuming physics, instead relying purely on abstract structural and logical consequences.
+Unlike conventional quantum computing simulators based on quantum mechanics postulates, `onq` explores how computational dynamics might emerge necessarily from a single axiom. It aims to model phenomena analogous to quantum computation (superposition, entanglement analogs, interference, stabilization/measurement analogs) **without assuming physics**, relying instead on the structural and logical consequences defined by the framework provided during its development context.
+
+This library serves as a tool for:
+* Exploring the computational implications of the framework.
+* Comparing the resulting dynamics with standard quantum mechanics to understand how foundational assumptions shape computation.
+* Investigating alternative models of computation derived from abstract principles.
 
 ## Core Concepts
 
-* **Qualitative Distinction Unit (QDU):** The fundamental unit, analogous to a qubit, representing a bounded distinction with qualitative state potential. (`onq::core::QduId`, `onq::core::Qdu`)
-* **Potentiality State:** Represents the state of QDUs before stabilization, capturing multiple possibilities using complex amplitudes derived from phase (`e^(iθ)`). Uses a global state vector for integrated systems. (`onq::core::PotentialityState`)
-* **Operations:** Transformations derived from key principles (Interaction, Influence, Sequential Ordering) and rules (`T = P⊗P`, phase manipulation, etc.). Implemented as distinct variants acting on the state vector. (`onq::operations::Operation`)
-    * Includes derived patterns like `QualityFlip`, `PhaseIntroduce`, `Superposition`, `PhiRotate`, etc.
-    * Includes derived `PhaseShift`, `ControlledInteraction`, `RelationalLock`.
-* **Circuit:** An ordered sequence of operations applied to QDUs. (`onq::circuits::Circuit`)
-* **Stabilization:** A process, derived from stability integration, coherence, and reality formation principles, that resolves `PotentialityState` into `StableState`. It uses interpretive scoring based on validation checks (Phase Coherence > 0.618 filter, Pattern Resonance interpreted via amplitude weighting) and deterministic selection via a state-seeded PRNG. (`onq::simulation::Simulator`, `onq::core::StableState`)
-* **Circuit Visualization:** Circuits can be printed as text-based diagrams similar to Cirq.
+Key concepts derived and implemented in `onq`:
 
-## Current Status & Caveats
+* **Qualitative Distinction Unit (QDU):** (`onq::core::QduId`, struct `onq::core::Qdu` implicitly managed by VM/Engine) The fundamental unit, analogous to a qubit. Represents a necessary, bounded distinction with inherent qualitative properties. Interpreted as having a minimal binary basis {Quality0, Quality1}.
+* **Potentiality State:** (`onq::core::PotentialityState`) Represents the state before stabilization. Uses a complex state vector (`Vec<Complex<f64>>`) to capture multiple potentialities and phase relationships (inspired by `e^(iθ)`). For N QDUs, uses a 2<sup>N</sup> dimensional vector to model integrated states. Assumes initial state `|Q0...Q0>`.
+* **Operations:** (`onq::operations::Operation`) Transformations derived from interaction principles (`T=P⊗P` analog). Implemented as variants acting on the state vector, including:
+    * Single-QDU `InteractionPattern`s with derived matrices (analogs for I, X, Y, Z, H, S, T, S†, T†, √X, √X†, plus φ-based rotations).
+    * General `PhaseShift`.
+    * `ControlledInteraction` (using derived conditional gating logic via 4x4 matrix).
+    * `RelationalLock` (using derived non-unitary projection onto Bell states).
+* **ONQ Virtual Machine (ONQ-VM):** (`onq::vm::OnqVm`) An interpreter that executes `Program`s containing sequences of `Instruction`s.
+* **Program / Instructions:** (`onq::vm::Program`, `onq::vm::Instruction`, `onq::vm::ProgramBuilder`) Defines programs with mixed quantum operations, stabilization, classical memory access (`Record`), classical computation (arithmetic, logic, compare), and control flow (labels, jumps, branches).
+* **Stabilization:** (`onq::vm::Instruction::Stabilize`, internal `SimulationEngine::stabilize`) The  analog of measurement. Deterministically resolves `PotentialityState` into `StableState`. See "Key Differences" below.
+* **Validation:** (`onq::validation::*`) Functions to check state normalization and  Phase Coherence criteria.
 
-* **Foundational Implementation:** Core modules (`core`, `operations`, `circuits`, `simulation`) are implemented.
-* **Interpretive Nature:** Many derivations (especially for stabilization scoring, specific interaction pattern matrices, control logic, lock logic, initial state, basis states)  are experimental. These interpretations aim for consistency but require further validation or refinement based on deeper framework analysis.
-* **Placeholders/Weak Justifications:** Some derived patterns (`Superposition`, `SqrtFlip`) have weaker justifications than others. Some logic components (like the exact nature of resonance scoring) are simplified interpretations.
-* **Testing:** Basic unit/integration tests and documentation examples exist and pass with the current logic.
+## Key Differences from Quantum Mechanics
 
-**Disclaimer:** `onq` is a theoretical simulation project. It does not necessarily model physical reality or standard quantum mechanics, although analogies are sometimes drawn for comparison.
+Understanding `onq` requires recognizing its fundamental departures from standard quantum mechanics (QM):
 
-## Usage Example
+1.  **Foundation:** `onq` derives from abstract logical necessity, not QM postulates derived from physical observation.
+2.  **"Measurement" (Stabilization):** This is the most significant difference.
+    * **QM:** Projective measurement is probabilistic (Born rule), collapsing the state vector onto an eigenstate, inherently random for superpositions.
+    * **`onq`:** `Stabilize` is **deterministic**. It resolves potentiality based on criteria:
+        * **Filtering:** Potential outcomes (basis states `|k>`) *must* meet an interpreted Phase Coherence threshold (`Score_C1(k) > 0.618`) relative to the input state. States failing this cannot be stabilized into.
+        * **Scoring:** Valid outcomes are weighted by `S(k) = Score_C1(k) * |amplitude_k|^2` (interpreting resonance/convergence via amplitude).
+        * **Selection:** A single outcome `k` is chosen deterministically from the valid, scored possibilities using a pseudo-random number generator seeded by a hash of the input state vector. (Same input state -> Same outcome).
+    * **Consequence:** Running the same `onq` program yields the same stabilization results every time. Statistical distributions seen in QM experiments must emerge differently, if at all (perhaps through variations in initial state preparation or environmental interaction, which are not yet modeled).
+3.  **Operations:** While many operations have QM analogs (H, X, Z, CNOT...), their existence and specific matrix forms are justified solely by interpretation. Unique operations like `PhiRotate` may exist, and standard QM operations might be absent if not derivable.
+4.  **"Entanglement" (Locking):** `RelationalLock` uses non-unitary projection to force the state into specific integrated subspaces (Bell states currently), directly modeling Integration/Coherence. This differs from QM where entanglement arises purely from unitary evolution (e.g., CNOT on superposition).
 
-examples/demo.rs
+## Interpretations, Assumptions, and Limitations
+
+**This library is heavily based on interpretation** due to the abstract nature and mathematical ambiguities within the source texts provided. Key assumptions include:
+
+* **QDU Basis:** Assumes a minimal binary {Quality0, Quality1} basis per QDU.
+* **Initial State:** Assumes a default `|Q0...Q0>` state.
+* **State Vector Model:** Uses a standard complex state vector and interprets operations as matrix multiplications (interpreting `T=P⊗P`).
+* **Stabilization Scoring:** The metrics used for C1 (neighbour phase diff avg cosine) and C3 (via amplitude `|c_k|^2` weighting) are interpretations. The application of the C1 `>0.618` threshold as a filter on outcomes is also an interpretation.
+* **Control Logic:** `ControlledInteraction` assumes simple gating based on control quality.
+* **Locking:** `RelationalLock` assumes non-unitary projection is a valid mechanism for achieving integrated states.
+* **Mathematical Gaps:** The library cannot fully resolve ambiguities stemming from undefined operators (`⊗`, `×`, `∇²`, etc.) and terms (φ, ψ in `Ω(x)`).
+
+**Therefore, simulation results reflect the behavior of *this specific interpretation* of the  framework.**
+
+## Current Status
+
+* Core simulation engine for state vector evolution based on derived operations.
+* ONQ-VM interpreter supporting mixed quantum/classical programs with control flow.
+* stabilization mechanism implemented.
+* State validation checks integrated.
+* Circuit visualization via `Display` trait.
+* Basic tests and examples demonstrating functionality.
+* **Ongoing:** Refinement of interpretations, derivation of more operations, addressing framework ambiguities.
+
+## Usage Example (Quantum Teleportation Analog)
+
 ```rust
-//! Example: Quantum Teleportation using the ONQ-VM.
-//! Demonstrates preparing an entangled pair, Bell measurement,
-//! recording results to classical registers, and applying conditional
-//! recovery operations based on the classical results.
+// From examples/vm_teleportation.rs (showing structure)
+use onq::{
+    core::{OnqError, QduId},
+    operations::Operation,
+    vm::{Instruction, LockType, OnqVm, ProgramBuilder}, // Use LockType if needed elsewhere
+};
 
-use onq::core::QduId;
-use onq::operations::Operation;
-use onq::vm::{Instruction, OnqVm, ProgramBuilder}; // Import VM components
+fn qid(id: u64) -> QduId { QduId(id) }
 
-// Helper for QduId creation
-fn qid(id: u64) -> QduId {
-    QduId(id)
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> { // Use Box<dyn Error> for main
-    println!("--- ONQ-VM Example: Quantum Teleportation (with Classical Control) ---");
-
-    // Define QDUs
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let msg_q = qid(0);
     let alice_q = qid(1);
     let bob_q = qid(2);
 
-    // --- Build the Teleportation Program ---
     let program = ProgramBuilder::new()
-        // 1. Prepare Message state |+>
-        .pb_add(Instruction::QuantumOp(Operation::InteractionPattern {
-            target: msg_q,
-            pattern_id: "Superposition".to_string(),
-        }))
-        // 2. Create Bell pair |Φ+> between Alice and Bob
-        .pb_add(Instruction::QuantumOp(Operation::InteractionPattern {
-            target: alice_q,
-            pattern_id: "Superposition".to_string(),
-        }))
-        .pb_add(Instruction::QuantumOp(Operation::ControlledInteraction {
-            control: alice_q,
-            target: bob_q,
-            pattern_id: "QualityFlip".to_string(),
-        }))
-        // 3. Alice's Bell measurement basis change
-        .pb_add(Instruction::QuantumOp(Operation::ControlledInteraction {
-            control: msg_q,
-            target: alice_q,
-            pattern_id: "QualityFlip".to_string(),
-        }))
-        .pb_add(Instruction::QuantumOp(Operation::InteractionPattern {
-            target: msg_q,
-            pattern_id: "Superposition".to_string(),
-        }))
-        // 4. Stabilize Alice's qubits and Record results
-        .pb_add(Instruction::Stabilize { targets: vec![msg_q, alice_q] })
-        .pb_add(Instruction::Record { qdu: msg_q,   register: "m_msg".to_string() })
-        .pb_add(Instruction::Record { qdu: alice_q, register: "m_alice".to_string() })
-
-        // 5. Bob's Classical Corrections (Conditional Operations)
-        // 5a. X Correction based on Alice's measurement (m_alice)
-        .pb_add(Instruction::Label("X_Correction".to_string())) // Label for clarity
-        .pb_add(Instruction::BranchIfZero { // If m_alice == 0, jump past X gate
-            register: "m_alice".to_string(),
-            label: "skip_x_corr".to_string(),
-        })
-        .pb_add(Instruction::QuantumOp(Operation::InteractionPattern { // Apply X if m_alice == 1
-            target: bob_q,
-            pattern_id: "QualityFlip".to_string(),
-        }))
-        .pb_add(Instruction::Label("skip_x_corr".to_string()))
-
-        // 5b. Z Correction based on Message measurement (m_msg)
-        .pb_add(Instruction::Label("Z_Correction".to_string())) // Label for clarity
-        .pb_add(Instruction::BranchIfZero { // If m_msg == 0, jump past Z gate
-            register: "m_msg".to_string(),
-            label: "skip_z_corr".to_string(),
-        })
-        .pb_add(Instruction::QuantumOp(Operation::InteractionPattern { // Apply Z if m_msg == 1
-            target: bob_q,
-            pattern_id: "PhaseIntroduce".to_string(),
-        }))
-        .pb_add(Instruction::Label("skip_z_corr".to_string()))
-
-        // 6. Stabilize Bob's qubit (optional, to verify outcome)
-        .pb_add(Instruction::Stabilize { targets: vec![bob_q] })
-        .pb_add(Instruction::Record { qdu: bob_q, register: "m_bob".to_string() })
-
+        // 1. Prep Message |+>
+        .add(Instruction::QuantumOp(Operation::InteractionPattern { target: msg_q, pattern_id: "Superposition".to_string() }))
+        // 2. Create Bell Pair |Φ+> (Alice, Bob)
+        .add(Instruction::QuantumOp(Operation::InteractionPattern { target: alice_q, pattern_id: "Superposition".to_string() }))
+        .add(Instruction::QuantumOp(Operation::ControlledInteraction { control: alice_q, target: bob_q, pattern_id: "QualityFlip".to_string() }))
+        // 3. Bell Basis Change (Msg, Alice)
+        .add(Instruction::QuantumOp(Operation::ControlledInteraction { control: msg_q, target: alice_q, pattern_id: "QualityFlip".to_string() }))
+        .add(Instruction::QuantumOp(Operation::InteractionPattern { target: msg_q, pattern_id: "Superposition".to_string() }))
+        // 4. Stabilize & Record Alice's results
+        .add(Instruction::Stabilize { targets: vec![msg_q, alice_q] })
+        .add(Instruction::Record { qdu: msg_q, register: "m_msg".to_string() })
+        .add(Instruction::Record { qdu: alice_q, register: "m_alice".to_string() })
+        // 5. Bob's Conditional Corrections
+        .add(Instruction::Label("X_Correction".to_string()))
+        .add(Instruction::BranchIfZero { register: "m_alice".to_string(), label: "skip_x_corr".to_string() })
+        .add(Instruction::QuantumOp(Operation::InteractionPattern { target: bob_q, pattern_id: "QualityFlip".to_string() }))
+        .add(Instruction::Label("skip_x_corr".to_string()))
+        .add(Instruction::Label("Z_Correction".to_string()))
+        .add(Instruction::BranchIfZero { register: "m_msg".to_string(), label: "skip_z_corr".to_string() })
+        .add(Instruction::QuantumOp(Operation::InteractionPattern { target: bob_q, pattern_id: "PhaseIntroduce".to_string() }))
+        .add(Instruction::Label("skip_z_corr".to_string()))
+        // 6. Stabilize Bob & Record
+        .add(Instruction::Stabilize { targets: vec![bob_q] })
+        .add(Instruction::Record { qdu: bob_q, register: "m_bob".to_string() })
         // 7. Halt
-        .pb_add(Instruction::Halt)
-        .build()?; // Build the program
+        .add(Instruction::Halt)
+        .build()?;
 
-    // Print the program instructions
-    println!("\nTeleportation Program Instructions:\n{}", program);
+    println!("Program:\n{}", program); // Uses Program Display impl
 
-    // --- Run the ONQ-VM ---
     let mut vm = OnqVm::new();
-    println!("Running ONQ-VM...");
-    vm.run(&program)?; // Execute the program
+    vm.run(&program)?;
 
-    // --- Analyze Results ---
-    println!("\n--- ONQ-VM Execution Finished ---");
-    let final_mem = vm.get_classical_memory();
-    println!("Final Classical Memory: {:?}", final_mem);
-
-    let m_msg = vm.get_classical_register("m_msg");
-    let m_alice = vm.get_classical_register("m_alice");
-    let m_bob = vm.get_classical_register("m_bob");
-
-    println!("\nAnalysis:");
-    println!("- Alice's measurement outcomes (classical bits sent): msg={}, alice={}", m_msg, m_alice);
-    println!("- Bob's final stabilized state: {}", m_bob);
-    println!("- Verification Notes:");
-    println!("  - Input state for Message QDU was |+>.");
-    println!("  - Teleportation *should* transfer |+> state to Bob's QDU *before* final stabilization.");
-    println!("  - Stabilizing |+> state deterministically yields 0 or 1 based on rules (observed outcome: {}).", m_bob);
-    println!("  - Perfect verification requires state vector access/tomography.");
-
+    println!("\nFinal Classical Memory: {:?}", vm.get_classical_memory());
     Ok(())
 }
 ```
-Outputs:
+
+## Development
 
 ```bash
-Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
-     Running `target/debug/examples/vm_teleportation`
---- ONQ-VM Example: Quantum Teleportation (with Classical Control) ---
+# Clone the repository (if applicable)
+# git clone ...
+# cd onq
 
-Teleportation Program Instructions:
-ONQ-VM Program (15 instructions)
-  0000: QuantumOp(InteractionPattern { target: QduId(0), pattern_id: "Superposition" })
-  0001: QuantumOp(InteractionPattern { target: QduId(1), pattern_id: "Superposition" })
-  0002: QuantumOp(ControlledInteraction { control: QduId(1), target: QduId(2), pattern_id: "QualityFlip" })
-  0003: QuantumOp(ControlledInteraction { control: QduId(0), target: QduId(1), pattern_id: "QualityFlip" })
-  0004: QuantumOp(InteractionPattern { target: QduId(0), pattern_id: "Superposition" })
-  0005: Stabilize { targets: [QduId(0), QduId(1)] }
-  0006: Record { qdu: QduId(0), register: "m_msg" }
-  0007: Record { qdu: QduId(1), register: "m_alice" }
-X_Correction:
-  0008: BranchIfZero { register: "m_alice", label: "skip_x_corr" }
-  0009: QuantumOp(InteractionPattern { target: QduId(2), pattern_id: "QualityFlip" })
-Z_Correction:
-  0010: BranchIfZero { register: "m_msg", label: "skip_z_corr" }
-  0011: QuantumOp(InteractionPattern { target: QduId(2), pattern_id: "PhaseIntroduce" })
-skip_z_corr:
-  0012: Stabilize { targets: [QduId(2)] }
-  0013: Record { qdu: QduId(2), register: "m_bob" }
-  0014: Halt
+# Build
+cargo build [--release]
 
-Running ONQ-VM...
-[VM RUN START]
-[VM Engine Initialized for {QduId(1), QduId(2), QduId(0)}]
-[VM] PC=0000 Fetching...
-[VM] PC=0000 Executing: QuantumOp(InteractionPattern { target: QduId(0), pattern_id: "Superposition" })
-[VM] PC=0001 Fetching...
-[VM] PC=0001 Executing: QuantumOp(InteractionPattern { target: QduId(1), pattern_id: "Superposition" })
-[VM] PC=0002 Fetching...
-[VM] PC=0002 Executing: QuantumOp(ControlledInteraction { control: QduId(1), target: QduId(2), pattern_id: "QualityFlip" })
-[VM] PC=0003 Fetching...
-[VM] PC=0003 Executing: QuantumOp(ControlledInteraction { control: QduId(0), target: QduId(1), pattern_id: "QualityFlip" })
-[VM] PC=0004 Fetching...
-[VM] PC=0004 Executing: QuantumOp(InteractionPattern { target: QduId(0), pattern_id: "Superposition" })
-[VM] PC=0005 Fetching...
-[VM] PC=0005 Executing: Stabilize { targets: [QduId(0), QduId(1)] }
-[VM] PC=0005 Calling engine.stabilize for [QduId(0), QduId(1)]
-[VM] PC=0005 engine.stabilize finished. Temp result: SimulationResult { stable_outcomes: {QduId(0): ResolvedQuality(0), QduId(1): ResolvedQuality(1)} }
-[VM] PC=0005 Stabilize: QDU QDU(0), State ResolvedQuality(0), Resolved Value: Some(0)
-[VM] PC=0005 Stabilize: QDU QDU(1), State ResolvedQuality(1), Resolved Value: Some(1)
-[VM] PC=0005 Stored last_stabilization_outcomes: {QduId(0): 0, QduId(1): 1}
-[VM] PC=0006 Fetching...
-[VM] PC=0006 Executing: Record { qdu: QduId(0), register: "m_msg" }
-[VM] PC=0006 Attempting to record for QDU QDU(0)
-[VM] PC=0006 Current last_stabilization_outcomes: {QduId(0): 0, QduId(1): 1}
-[VM] PC=0006 Value Option for QDU QDU(0): Some(0)
-[VM] PC=0006 Recording value 0 to register 'm_msg'
-[VM] PC=0006 Classical memory now: {"m_msg": 0}
-[VM] PC=0007 Fetching...
-[VM] PC=0007 Executing: Record { qdu: QduId(1), register: "m_alice" }
-[VM] PC=0007 Attempting to record for QDU QDU(1)
-[VM] PC=0007 Current last_stabilization_outcomes: {QduId(0): 0, QduId(1): 1}
-[VM] PC=0007 Value Option for QDU QDU(1): Some(1)
-[VM] PC=0007 Recording value 1 to register 'm_alice'
-[VM] PC=0007 Classical memory now: {"m_alice": 1, "m_msg": 0}
-[VM] PC=0008 Fetching...
-[VM] PC=0008 Executing: BranchIfZero { register: "m_alice", label: "skip_x_corr" }
-[VM] PC=0008 BranchIfZero: Reg 'm_alice' = 1
-[VM] PC=0008 Branch not taken.
-[VM] PC=0009 Fetching...
-[VM] PC=0009 Executing: QuantumOp(InteractionPattern { target: QduId(2), pattern_id: "QualityFlip" })
-[VM] PC=0010 Fetching...
-[VM] PC=0010 Executing: BranchIfZero { register: "m_msg", label: "skip_z_corr" }
-[VM] PC=0010 BranchIfZero: Reg 'm_msg' = 0
-[VM] PC=0010 Branch taken to label 'skip_z_corr' (PC=12)
-[VM] PC=0012 Fetching...
-[VM] PC=0012 Executing: Stabilize { targets: [QduId(2)] }
-[VM] PC=0012 Calling engine.stabilize for [QduId(2)]
-[VM] PC=0012 engine.stabilize finished. Temp result: SimulationResult { stable_outcomes: {QduId(2): ResolvedQuality(1)} }
-[VM] PC=0012 Stabilize: QDU QDU(2), State ResolvedQuality(1), Resolved Value: Some(1)
-[VM] PC=0012 Stored last_stabilization_outcomes: {QduId(2): 1}
-[VM] PC=0013 Fetching...
-[VM] PC=0013 Executing: Record { qdu: QduId(2), register: "m_bob" }
-[VM] PC=0013 Attempting to record for QDU QDU(2)
-[VM] PC=0013 Current last_stabilization_outcomes: {QduId(2): 1}
-[VM] PC=0013 Value Option for QDU QDU(2): Some(1)
-[VM] PC=0013 Recording value 1 to register 'm_bob'
-[VM] PC=0013 Classical memory now: {"m_bob": 1, "m_alice": 1, "m_msg": 0}
-[VM] PC=0014 Fetching...
-[VM] PC=0014 Executing: Halt
-[VM] PC=0014 Halting.
-[VM RUN END]
+# Run tests (unit, integration, doc)
+cargo test [--release]
 
---- ONQ-VM Execution Finished ---
-Final Classical Memory: {"m_bob": 1, "m_alice": 1, "m_msg": 0}
-
-Analysis:
-- Alice's measurement outcomes (classical bits sent): msg=0, alice=1
-- Bob's final stabilized state: 1
-- Verification Notes:
-  - Input state for Message QDU was |+>.
-  - Teleportation *should* transfer |+> state to Bob's QDU *before* final stabilization.
-  - Stabilizing |+> state deterministically yields 0 or 1 based on rules (observed outcome: 1).
-  - Perfect verification requires state vector access/tomography.
+# Run examples
+cargo run --example sqrt_flip_demo [--release]
+cargo run --example vm_teleportation [--release]
 ```
 
 ## Notebooks
