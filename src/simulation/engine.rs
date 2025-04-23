@@ -308,7 +308,7 @@ impl SimulationEngine {
             let mut valid_outcomes: Vec<(usize, f64)> = Vec::with_capacity(dim); // Stores (index, score S(k))
             let mut total_score = 0.0;
 
-            for k in 0..dim {
+            for (k, _) in state_vector.iter().enumerate().take(dim) {
                 let amplitude_sq = state_vector[k].norm_sqr();
 
                 // Only consider states with non-negligible amplitude potentiality
