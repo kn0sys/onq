@@ -57,146 +57,6 @@ impl OnqVm {
     /// # Returns
     /// * `Ok(())` if the program halts successfully.
     /// * `Err(OnqError)` if a simulation error or runtime error occurs (e.g., label not found, invalid op).
-    // pub fn run(&mut self, program: &Program) -> Result<(), OnqError> {
-    //     self.reset();
-    //
-    //     // 1. Determine all QDUs involved in the program to initialize the engine
-    //     let all_qdus = Self::collect_qdus(program)?;
-    //     if !all_qdus.is_empty() {
-    //          self.engine = Some(SimulationEngine::init(&all_qdus)?);
-    //     } else {
-    //          // No quantum ops? Engine remains None. Allow running purely classical programs.
-    //          self.engine = None;
-    //     }
-    //
-    //
-    //     // 2. Execution Loop
-    //     while !self.is_halted {
-    //         let pc = self.program_counter;
-    //
-    //         // Fetch instruction
-    //         let instruction = program.get_instruction(pc).ok_or_else(|| {
-    //             OnqError::SimulationError{ message: format!("Program Counter ({}) out of bounds (0..{}).", pc, program.instruction_count())}
-    //         })?;
-    //
-    //         // Advance PC before execution (simplifies branching)
-    //         self.program_counter = 1;
-    //
-    //         // Execute instruction
-    //         match instruction {
-    //             Instruction::QuantumOp(op) => {
-    //                 if let Some(engine) = self.engine.as_mut() {
-    //                      engine.apply_operation(op)?;
-    //                 } else {
-    //                      return Err(OnqError::InvalidOperation { message: "Cannot execute QuantumOp: SimulationEngine not initialized (no QDUs defined in program?).".to_string() });
-    //                 }
-    //             }
-    //             Instruction::Stabilize { targets } => {
-    //                 if targets.is_empty() { continue; } // No-op if no targets
-    //                 if let Some(engine) = self.engine.as_mut() {
-    //                      // Need a temporary SimulationResult structure just to call stabilize
-    //                      // Alternatively, modify stabilize to return HashMap<QduId, StableState> directly?
-    //                      // Let's use the temporary result structure for now.
-    //                      let mut temp_result = SimulationResult::new();
-    //                      engine.stabilize(targets, &mut temp_result)?;
-    //                      // Store the u64 outcomes for Record instruction
-    //                      self.last_stabilization_outcomes = temp_result.all_stable_outcomes().iter()
-    //                          .filter_map(|(qid, state)| state.get_resolved_value().map(|val| (*qid, val)))
-    //                          .collect();
-    //                 } else {
-    //                      return Err(OnqError::InvalidOperation { message: "Cannot execute Stabilize: SimulationEngine not initialized.".to_string() });
-    //                 }
-    //             }
-    //             Instruction::Record { qdu, register } => {
-    //                 let value = self.last_stabilization_outcomes.get(qdu).ok_or_else(|| {
-    //                     OnqError::InvalidOperation { message: format!("Cannot Record: QDU {} was not found in the last stabilization results.", qdu) }
-    //                 })?;
-    //                 self.classical_memory.insert(register.clone(), *value);
-    //             }
-    //             Instruction::Label(_) => {
-    //                 // No operation, labels handled during build/jump resolution
-    //             }
-    //             Instruction::Jump(label) => {
-    //                 let target_pc = program.get_label_pc(label).ok_or_else(|| {
-    //                      OnqError::SimulationError { message: format!("Runtime Error: Jump target label '{}' not found.", label) }
-    //                 })?;
-    //                 self.program_counter = target_pc; // Set PC to instruction *after* label
-    //             }
-    //             Instruction::BranchIfZero { register, label } => {
-    //                 let reg_value = self.classical_memory.get(register).copied().unwrap_or(0); // Default to 0 if register doesn't exist
-    //                 if reg_value == 0 {
-    //                     let target_pc = program.get_label_pc(label).ok_or_else(|| {
-    //                          OnqError::SimulationError { message: format!("Runtime Error: Branch target label '{}' not found.", label) }
-    //                     })?;
-    //                     self.program_counter = target_pc;
-    //                 }
-    //                 // Otherwise, continue to next instruction (PC already incremented)
-    //             }
-    //             Instruction::LoadImmediate { register, value } => {
-    //                 self.classical_memory.insert(register.clone(), *value);
-    //             }
-    //             Instruction::Copy { source_reg, dest_reg } => {
-    //                 let value = self.classical_memory.get(source_reg).copied().unwrap_or(0); // Default to 0 if source doesn't exist
-    //                 self.classical_memory.insert(dest_reg.clone(), value);
-    //             }
-    //             Instruction::Halt => {
-    //                 self.is_halted = true;
-    //                 // Optionally break loop here, or let loop condition handle it
-    //             }
-    //             Instruction::NoOp => {
-    //                 // Do nothing
-    //             }
-    //                             Instruction::Addi { r_dest, r_src, value } => {
-    //                 let val_src = self.classical_memory.get(r_src).copied().unwrap_or(0);
-    //                 // Use wrapping_add for defined overflow behavior
-    //                 self.classical_memory.insert(r_dest.clone(), val_src.wrapping_add(*value));
-    //             }
-    //             Instruction::Add { r_dest, r_src1, r_src2 } => {
-    //                 let val1 = self.classical_memory.get(r_src1).copied().unwrap_or(0);
-    //                 let val2 = self.classical_memory.get(r_src2).copied().unwrap_or(0);
-    //                 self.classical_memory.insert(r_dest.clone(), val1.wrapping_add(val2));
-    //             }
-    //             Instruction::Not { r_dest, r_src } => {
-    //                 let val_src = self.classical_memory.get(r_src).copied().unwrap_or(0);
-    //                 self.classical_memory.insert(r_dest.clone(), !val_src); // Bitwise NOT
-    //             }
-    //             Instruction::And { r_dest, r_src1, r_src2 } => {
-    //                 let val1 = self.classical_memory.get(r_src1).copied().unwrap_or(0);
-    //                 let val2 = self.classical_memory.get(r_src2).copied().unwrap_or(0);
-    //                 self.classical_memory.insert(r_dest.clone(), val1 & val2); // Bitwise AND
-    //             }
-    //              Instruction::Or { r_dest, r_src1, r_src2 } => {
-    //                 let val1 = self.classical_memory.get(r_src1).copied().unwrap_or(0);
-    //                 let val2 = self.classical_memory.get(r_src2).copied().unwrap_or(0);
-    //                 self.classical_memory.insert(r_dest.clone(), val1 | val2); // Bitwise OR
-    //             }
-    //              Instruction::Xor { r_dest, r_src1, r_src2 } => {
-    //                 let val1 = self.classical_memory.get(r_src1).copied().unwrap_or(0);
-    //                 let val2 = self.classical_memory.get(r_src2).copied().unwrap_or(0);
-    //                 self.classical_memory.insert(r_dest.clone(), val1 ^ val2); // Bitwise XOR
-    //             }
-    //              Instruction::CmpEq { r_dest, r_src1, r_src2 } => {
-    //                 let val1 = self.classical_memory.get(r_src1).copied().unwrap_or(0);
-    //                 let val2 = self.classical_memory.get(r_src2).copied().unwrap_or(0);
-    //                 self.classical_memory.insert(r_dest.clone(), if val1 == val2 { 1 } else { 0 });
-    //             }
-    //              Instruction::CmpGt { r_dest, r_src1, r_src2 } => {
-    //                 let val1 = self.classical_memory.get(r_src1).copied().unwrap_or(0);
-    //                 let val2 = self.classical_memory.get(r_src2).copied().unwrap_or(0);
-    //                 self.classical_memory.insert(r_dest.clone(), if val1 > val2 { 1 } else { 0 });
-    //             }
-    //         } // End match instruction
-    //
-    //          // Check if PC ran off the end without halting
-    //         if !self.is_halted && self.program_counter >= program.instruction_count() {
-    //              // Implicit halt at end of program? Or error? Let's halt.
-    //              self.is_halted = true;
-    //         }
-    //
-    //     } // End while !self.is_halted
-    //
-    //     Ok(())
-    // }
     pub fn run(&mut self, program: &Program) -> Result<(), OnqError> {
         self.reset();
         println!("[VM RUN START]"); // DEBUG
@@ -433,6 +293,15 @@ impl OnqVm {
         self.classical_memory.clone()
     }
 
+    /// Returns a clone of the current quantum PotentialityState, if the
+    /// simulation engine has been initialized (i.e., if the program contained quantum ops).
+    /// Returns `None` if no quantum state exists (e.g., purely classical program or before run).
+    /// Cloning can be expensive for large state vectors.
+    pub fn get_final_state(&self) -> Option<crate::PotentialityState> {
+        // Access the engine's state via the pub(crate) get_state method and clone it
+        self.engine.as_ref().map(|e| e.get_state().clone())
+        // Note: PotentialityState derives Clone, which uses Vec::clone, performing a deep copy.
+    }
     // Potential future methods:
     // - step(): Execute one instruction
     // - get_potentiality_state(): Get a clone of the engine's state (if engine exists)

@@ -76,8 +76,7 @@ impl SimulationEngine {
         })
     }
 
-    #[cfg(test)]
-    pub(crate) fn get_state(&self) -> &PotentialityState {
+    pub fn get_state(&self) -> &PotentialityState {
         // engine is guaranteed to be Some if called within a test after init
         &self.global_state
     }

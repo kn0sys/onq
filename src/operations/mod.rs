@@ -18,7 +18,8 @@ use crate::vm::program::LockType;
 /// - State Influence
 /// - Interactive Necessity & Causation
 /// - Structural Feedback
-///     And potentially map to constructs like:
+///
+///   And potentially map to constructs like:
 /// - State Transformation `T = P(n+1) ⊗ P(n)`
 /// - Field Overlay `F = F₁ ⊗ F₂`
 /// - Phase manipulation (`e^(iθ)`, Rotary Junction `⊕─○`)
@@ -103,9 +104,10 @@ pub enum Operation {
     /// - Pattern Formation selecting stable outcomes
     /// - Integration Requirement forcing coherence
     /// - Reality Formation through interaction/feedback
-    ///     It should involve checks such as coherence, stability and resonance.
-    ///     The outcome is probabilistic only if the underlying dynamics
-    ///     leading to stabilization inherently contain multiple stable endpoints for a given potentiality state.
+    ///
+    /// It should involve checks such as coherence, stability and resonance.
+    /// The outcome is probabilistic only if the underlying dynamics
+    /// leading to stabilization inherently contain multiple stable endpoints for a given potentiality state.
     ///
     /// Analogy: Similar to measurement in quantum computing.
     Stabilize {
