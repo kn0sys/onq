@@ -15,7 +15,7 @@ const DEFAULT_COHERENCE_THRESHOLD: f64 = 0.618;
 /// Helper to calculate the interpretive (Phase Coherence) for a specific basis state k.
 /// Measures phase agreement with nearest neighbour basis states that have non-negligible amplitude.
 /// Returns a score between 0.0 and 1.0. (Internal to this module)
-fn calculate_c1_score_for_state_k(
+pub fn calculate_c1_score_for_state_k(
     k: usize,
     state_vector: &[Complex<f64>],
     num_qdus: usize,

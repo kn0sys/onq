@@ -4,4 +4,4 @@ version = "0.2.0"
 edition = "2024"
 
 [dependencies]
-onq = "0.2.0"
+onq = "0.3.0"

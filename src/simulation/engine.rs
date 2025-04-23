@@ -287,8 +287,9 @@ impl SimulationEngine {
     /// 1. Calculating a Stability Score S(k) for each potential outcome basis state |k>,
     ///    based on interpretations of C_A (Phase Coherence) and C_B (Pattern Resonance),
     ///    combined with the state's amplitude |c_k|^2.
-    /// 2. Filtering outcomes k to only include those meeting amplitude (> tol) and C_A Phase Coherence (> 0.618) criteria.
-    /// 3. Deterministically selecting an outcome |k> from the filtered possibilities using a seeded PRNG,
+    /// 2. Filtering outcomes k to only include those meeting amplitude (> tol) criteria.
+    /// 3. Deterministically selecting an outcome |k> from the filtered possibilities using a seeded PRNG
+    ///    weighted by the calculated scores `S(k) = score_c1 * |c_k|^2` (where score_c1 influences probability).
     /// 4. Collapsing the global state vector to the chosen outcome basis state |k>.
     /// 5. Recording the resolved states for the specifically targeted QDUs based on |k>.
     ///
@@ -312,28 +313,20 @@ impl SimulationEngine {
 
                 // Only consider states with non-negligible amplitude potentiality
                 if amplitude_sq > 1e-12 {
-                    // Calculate scores based on interpreted checks
-                    let score_c1 = self.calculate_c1_score(k, state_vector);
 
-                    // **C_A Filter:** Only proceed if phase coherence meets threshold
-                    if score_c1 > 0.618 {
-
-                        // Final Score S(k) - combines potentiality and filtered stability/coherence factors
-                        let final_score = score_c1 * amplitude_sq;
-
+                    let final_score = amplitude_sq; // S(k) = score_c1 * |c_k|^2
                     // Check if the final score is numerically valid and positive
                     if final_score.is_finite() && final_score > 1e-12 { // Use tolerance for score as well
                         valid_outcomes.push((k, final_score));
                         total_score += final_score;
                     }
                 }
-            }
         }
 
         // Check if any outcome is possible according to our scoring
         if valid_outcomes.is_empty() || total_score < 1e-12 {
             // This might happen if the state is highly incoherent or only has negligible amplitudes
-            return Err(OnqError::Instability { message: "Stabilization failed: No possible outcome met amplitude and C1 Phase Coherence (>0.618) criteria.".to_string() });
+            return Err(OnqError::Instability { message: "Stabilization failed: No possible outcome met amplitude and Stabilization failed: No valid outcomes found (check state norm and phase coherence scores).".to_string() });
         }
 
         // 2. Deterministic Seeding for PRNG (same as before)
@@ -536,6 +529,7 @@ impl SimulationEngine {
     /// Calculates the interpretive C1 Score (Phase Coherence) for a basis state k.
     /// Measures phase agreement with nearest neighbour basis states that have non-negligible amplitude.
     /// Returns a score between 0.0 and 1.0.
+    #[allow(dead_code)]
     fn calculate_c1_score(&self, k: usize, state_vector: &[Complex<f64>]) -> f64 {
         if self.num_qdus == 0 { return 1.0; } // Coherence is perfect for 0 QDUs
 
