@@ -1,4 +1,4 @@
-// src/core/frame.rs
+//! QDU interaction logic
 
 use std::fmt;
 // Potentially use Arc later if frames need to be shared reference-counted objects

@@ -88,13 +88,15 @@ pub enum Operation {
     ///
     /// Analogy: Could be analogous to operations creating/breaking entanglement or
     /// enforcing phase coherence, but details depend on derivation.
-    /// **Placeholder Name:** Needs better grounding.
     RelationalLock {
+        /// The first QDU involved in the lock.
         qdu1: QduId,
+        /// The second QDU involved in the lock.
         qdu2: QduId,
         /// The target integrated/entangled state type for the lock.
         lock_type: LockType,
-        establish: bool, // If true, project onto lock state; if false, currently no-op.
+        /// If true, project onto lock state; if false, currently no-op.
+        establish: bool,
     },
 
     /// Represents the Stabilization Protocol (SP).
@@ -123,8 +125,29 @@ pub enum Operation {
 
 impl Operation {
     /// Returns a list of all QDU IDs directly mentioned in the operation's parameters.
-    /// This helps the simulator identify potentially affected states, although interactions
-    /// might implicitly affect other connected QDUs within the same frame.
+    ///
+    /// This helps identify which parts of the state vector might be affected by an operation,
+    /// although the actual effect (especially for multi-QDU gates) modifies the global state.
+    ///
+    /// # Examples
+    /// ```
+    /// # use onq::{Operation, QduId, LockType};
+    /// let q0 = QduId(0);
+    /// let q1 = QduId(1);
+    /// let op_h = Operation::InteractionPattern { target: q0, pattern_id: "H".to_string() };
+    /// let op_cx = Operation::ControlledInteraction { control: q0, target: q1, pattern_id: "X".to_string() };
+    /// let op_lock = Operation::RelationalLock { qdu1: q0, qdu2: q1, lock_type: LockType::BellPhiPlus, establish: true };
+    /// let op_stab = Operation::Stabilize { targets: vec![q0, q1] };
+    ///
+    /// assert_eq!(op_h.involved_qdus(), vec![q0]);
+    /// // Note: Order might not be guaranteed depending on internal representation if changed from vec!
+    /// let mut cx_qdus = op_cx.involved_qdus(); cx_qdus.sort();
+    /// assert_eq!(cx_qdus, vec![q0, q1]);
+    /// let mut lock_qdus = op_lock.involved_qdus(); lock_qdus.sort();
+    /// assert_eq!(lock_qdus, vec![q0, q1]);
+    /// let mut stab_qdus = op_stab.involved_qdus(); stab_qdus.sort();
+    /// assert_eq!(stab_qdus, vec![q0, q1]);
+    /// ```
     pub fn involved_qdus(&self) -> Vec<QduId> {
         match self {
             Operation::PhaseShift { target, .. } => vec![*target],

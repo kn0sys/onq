@@ -8,8 +8,6 @@ use crate::operations::Operation;
 use std::collections::HashMap;
 use std::fmt;
 
-// Add this enum definition
-
 /// Specifies the target entangled state for a RelationalLock operation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)] // Eq/Hash useful if used as keys later
 pub enum LockType {
@@ -35,37 +33,60 @@ pub enum Instruction {
     // --- Stabilization & Classical Recording ---
     /// Perform ONQ stabilization on target QDUs. The result is held implicitly
     /// until potentially recorded by a subsequent `Record` instruction.
-    Stabilize { targets: Vec<QduId> },
-    /// Record the `StableState` outcome (0 or 1) of the *most recent* stabilization
-    /// of a specific QDU into a named classical register.
-    /// Assumes stabilization occurred just before or recently enough for the result to be relevant.
-    /// Errors if the target QDU was not part of the last stabilization.
+    Stabilize {
+        /// The list of QDU IDs to stabilize.
+        targets: Vec<QduId>
+    },
+    /// Record the `StableState` outcome (interpreted as 0 or 1) of the *most recent*
+    /// stabilization of a specific QDU into a named classical register.
+    ///
+    /// # Errors
+    /// Returns `OnqError::InvalidOperation` if the specified `qdu` was not part
+    /// of the most recently executed `Stabilize` instruction, or if no
+    /// `Stabilize` has occurred yet in the relevant scope.
     Record {
-        qdu: QduId,         // QDU whose stabilization result is read
-        register: String,   // Target classical register name
+        /// The QDU whose stabilization result should be read.
+        qdu: QduId,
+        /// The name of the classical register (in the VM's `classical_memory`)
+        /// where the outcome (0 or 1) will be stored as a `u64`.
+        register: String,
     },
 
     // --- Control Flow ---
     /// Defines a named label at this point in the instruction sequence.
     /// Does not perform any action during execution, used only as a jump target.
     Label(String),
-    /// Unconditionally jump to the instruction following the specified label.
+    // Unconditionally jump execution to the instruction immediately following
+    /// the specified `Label`.
+    ///
+    /// # Errors
+    /// Returns `OnqError::SimulationError` during VM execution if the `label` is undefined.
     Jump(String),
-    /// Conditionally jump to the specified label if the value in the
-    /// classical register is zero.
+    /// Conditionally jump execution to the instruction immediately following the
+    /// specified `Label` *if* the value in the classical `register` is zero.
+    /// If the register does not exist, its value is treated as zero.
+    ///
+    /// # Errors
+    /// Returns `OnqError::SimulationError` during VM execution if the `label` is undefined.
     BranchIfZero {
-        register: String, // Register to check
-        label: String,    // Label to jump to if register value is 0
+        /// The name of the classical register to check.
+        register: String,
+        /// The target label name to jump to if the register's value is 0.
+        label: String,
     },
     // --- Classical Operations (Minimal Initial Set) ---
     /// Load an immediate unsigned 64-bit integer value into a classical register.
     LoadImmediate {
+        /// The destination register name.
         register: String,
+        /// The `u64` value to load.
         value: u64,
     },
     /// Copy the value from one classical register to another.
     Copy {
+        /// The name of the register to read from.
         source_reg: String,
+        /// The name of the register to write to.
         dest_reg: String,
     },
     // Future: Add arithmetic/logic (Add, Xor, And, Not, Compare, etc.)
@@ -77,66 +98,100 @@ pub enum Instruction {
     NoOp,
     /// Add `value` to the value in `r_src` and store in `r_dest`.
     Addi {
+        /// The destination register name.
         r_dest: String,
+        /// The source register name.
         r_src: String,
+        /// The immediate value to add.
         value: u64,
     },
     /// Add value in `r_src1` to value in `r_src2` and store in `r_dest`.
     OnqAdd {
+        /// The destination register name.
         r_dest: String,
+        /// The first source register name.
         r_src1: String,
+        /// The second source register name.
         r_src2: String,
     },
     /// Perform bitwise NOT on value in `r_src` and store in `r_dest`.
     OnqNot {
+        /// The destination register name.
         r_dest: String,
+        /// The first source register name.
         r_src: String,
     },
     /// Perform bitwise AND on values in `r_src1`, `r_src2` and store in `r_dest`.
     And {
+        /// The destination register name.
         r_dest: String,
+        /// The first source register name.
         r_src1: String,
+        /// The second source register name.
         r_src2: String,
     },
     /// Perform bitwise OR on values in `r_src1`, `r_src2` and store in `r_dest`.
     Or {
+        /// The destination register name.
         r_dest: String,
+        /// The first source register name.
         r_src1: String,
+        /// The second source register name.
         r_src2: String,
     },
     /// Perform bitwise XOR on values in `r_src1`, `r_src2` and store in `r_dest`.
     Xor {
+        /// The destination register name.
         r_dest: String,
+        /// The first source register name.
         r_src1: String,
+        /// The second source register name.
         r_src2: String,
     },
     /// Subtract value in `r_src2` from value in `r_src1` and store in `r_dest` (wrapping).
     Sub {
+        /// The destination register name.
         r_dest: String,
+        /// The first source register name.
         r_src1: String,
+        /// The second source register name.
         r_src2: String,
     },
     /// Multiply value in `r_src1` by value in `r_src2` and store in `r_dest` (wrapping).
     Mul {
+        /// The destination register name.
         r_dest: String,
+        /// The first source register name.
         r_src1: String,
+        /// The second source register name.
         r_src2: String,
     },
     /// Compare for equality: Set `r_dest` to 1 if `r_src1` == `r_src2`, else 0.
     CmpEq {
+        /// The destination register name.
         r_dest: String,
+        /// The first source register name.
         r_src1: String,
+        /// The second source register name.
         r_src2: String,
     },
     /// Compare for greater than (unsigned): Set `r_dest` to 1 if `r_src1` > `r_src2`, else 0.
     CmpGt {
+        /// The destination register name.
         r_dest: String,
+        /// The first source register name.
         r_src1: String,
+        /// The second source register name.
         r_src2: String,
     },
+    /// Compare for less than (unsigned): Set `r_dest` to 1 if `r_src1` < `r_src2`, else 0.
+    /// Reads 0 for non-existent source registers.
     CmpLt {
+        /// The destination register name.
         r_dest: String,
+        /// The first source register name.
         r_src1: String,
+        /// The second source register name.
         r_src2: String,
      },
 }
@@ -199,7 +254,26 @@ impl fmt::Display for Program {
 
 // --- Program Builder ---
 
-/// Facilitates the construction of `Program` instances, resolving labels.
+/// Facilitates the construction of [`Program`] instances using a fluent API.
+/// Handles label definition and resolution.
+///
+/// # Examples
+/// ```
+/// # use onq::vm::{Instruction, ProgramBuilder};
+/// # use onq::operations::Operation;
+/// # use onq::core::QduId;
+/// let program_result = ProgramBuilder::new()
+///     .pb_add(Instruction::LoadImmediate { register: "r0".to_string(), value: 10 })
+///     .pb_add(Instruction::Label("start".to_string()))
+///     .pb_add(Instruction::QuantumOp(Operation::InteractionPattern{ target: QduId(0), pattern_id: "H".to_string()})) // Placeholder
+///     .pb_add(Instruction::BranchIfZero { register: "r0".to_string(), label: "start".to_string()}) // Example conditional jump
+///     .pb_add(Instruction::Halt)
+///     .build();
+///
+/// assert!(program_result.is_ok());
+/// let program = program_result.unwrap();
+/// println!("{}", program);
+/// ```
 #[derive(Default)]
 pub struct ProgramBuilder {
     instructions: Vec<Instruction>,
@@ -208,6 +282,7 @@ pub struct ProgramBuilder {
 }
 
 impl ProgramBuilder {
+    /// Creates an empty program. Internal use; use ProgramBuilder.
     pub fn new() -> Self {
         Self::default()
     }

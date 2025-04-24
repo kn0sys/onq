@@ -1,4 +1,4 @@
-// src/core/qdu.rs
+//! ONQ qubit representation data structure
 
 use super::error::QduId;
 use std::fmt;

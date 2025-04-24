@@ -17,8 +17,35 @@ use std::fmt;
 /// This structure embodies (Sequential Ordering) by defining a precise
 /// list of interactions to be simulated. It captures a specific process or algorithm within the framework.
 ///
-/// Analogy: Similar to `cirq.Circuit` or `qiskit.QuantumCircuit`, representing the
-/// sequence of gates and measurements applied to qubits.
+/// Analogy: Similar to `cirq.Circuit` or `qiskit.QuantumCircuit`.
+///
+/// # Examples
+///
+/// ```
+/// # use onq::{Circuit, CircuitBuilder, Operation, QduId, LockType};
+/// # fn qid(id: u64) -> QduId { QduId(id) }
+/// let q0 = qid(0);
+/// let q1 = qid(1);
+///
+/// // Create using methods
+/// let mut circuit1 = Circuit::new();
+/// circuit1.add_operation(Operation::InteractionPattern { target: q0, pattern_id: "Superposition".to_string()});
+/// circuit1.add_operation(Operation::ControlledInteraction { control: q0, target: q1, pattern_id: "QualityFlip".to_string()});
+///
+/// // Create using builder
+/// let circuit2 = CircuitBuilder::new()
+///     .add_op(Operation::InteractionPattern { target: q0, pattern_id: "Superposition".to_string()})
+///     .add_op(Operation::ControlledInteraction { control: q0, target: q1, pattern_id: "QualityFlip".to_string()})
+///     .build();
+///
+/// assert_eq!(circuit1.len(), 2);
+/// assert!(circuit1.qdus().contains(&q0));
+/// assert!(circuit1.qdus().contains(&q1));
+/// assert_eq!(circuit1, circuit2);
+///
+/// // Print the circuit diagram
+/// println!("{}", circuit1);
+/// ```
 #[derive(Clone, PartialEq)] // PartialEq useful for testing circuits
 pub struct Circuit {
     /// The unique set of QDUs involved across all operations in this circuit.
@@ -115,7 +142,22 @@ impl Default for Circuit {
 // Circuit Builder
 //-------------------------------------------------------------------------
 
-/// A helper struct for programmatically constructing `Circuit` instances using method chaining.
+/// A helper struct for programmatically constructing [`Circuit`] instances using method chaining.
+///
+/// # Examples
+/// ```
+/// # use onq::{Circuit, CircuitBuilder, Operation, QduId, LockType};
+/// # fn qid(id: u64) -> QduId { QduId(id) }
+/// let q0 = qid(0);
+/// let q1 = qid(1);
+///
+/// let circuit = CircuitBuilder::new()
+///     .add_op(Operation::InteractionPattern { target: q0, pattern_id: "Superposition".to_string()})
+///     .add_op(Operation::ControlledInteraction { control: q0, target: q1, pattern_id: "QualityFlip".to_string()})
+///     .build();
+///
+/// assert_eq!(circuit.len(), 2);
+/// ```
 pub struct CircuitBuilder {
     circuit: Circuit,
     // Potential future fields:

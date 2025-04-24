@@ -1,4 +1,4 @@
-// src/core/error.rs
+//! Error handling logic
 
 use std::fmt;
 
@@ -21,23 +21,43 @@ impl fmt::Display for QduId {
 pub enum OnqError {
     /// Failure to maintain coherent state or unified reference.
     /// Analogous to failing (Phase Coherence).
-    Incoherence { message: String },
+    Incoherence {
+        /// Incoherence failure message
+        message: String
+    },
 
     /// Failure to stabilize or maintain stable patterns.
     /// Analogous to failing (Frame Stability) or (Pattern Convergence).
-    Instability { message: String },
+    Instability {
+        /// Instability failure message
+        message: String
+    },
 
     /// Compromised distinction boundary, losing qualitative distinction
-    BoundaryFailure { qdu_id: QduId, message: String },
+    BoundaryFailure {
+        /// Compromised QDU
+        qdu_id: QduId,
+        /// BoundaryFailure failure message
+        message: String
+    },
 
     /// Invalid reference, relationship, or connection between elements
-    ReferenceViolation { message: String },
+    ReferenceViolation {
+        /// ReferenceViolation failure message
+        message: String
+    },
 
     /// An applied operation is inconsistent with the current state or framework rules
-    InvalidOperation { message: String },
+    InvalidOperation {
+        /// InvalidOperation failure message
+        message: String
+    },
 
     /// General error encountered during the simulation process itself.
-    SimulationError { message: String },
+    SimulationError {
+        /// SimulationError failure message
+        message: String
+    },
     // Future: Could add variants like `FrameNotFound`, `QduNotFound` if needed by simulation logic.
 }
 

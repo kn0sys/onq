@@ -1,4 +1,4 @@
-// src/core/state.rs
+//! ONQ state vector representation
 
 // Make sure `num-complex` is in Cargo.toml: `num-complex = "0.4"`
 use num_complex::Complex;

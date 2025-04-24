@@ -1,9 +1,50 @@
 // src/lib.rs
 
-//! `onq` - A library for simulating quantum information processing
+#![warn(missing_docs)] // Enforce documentation warnings during build
+
+//! `onq`: Operations for Next Generation Quantum Computating Simulation Library
 //!
-//! This library provides structures and tools derived strictly from nature
-//! to model phenomena analogous to quantum computation.
+//! This library provides Rust structures and functions for simulating computation
+//! based *only* on abstract principles.
+//!
+//! ## Core Idea
+//!
+//! Unlike standard quantum simulators modeling quantum mechanics, `onq` explores
+//! computation emerging necessarily from a self-containing distinction. It models
+//! phenomena analogous to quantum computation (superposition,
+//! entanglement analogs, interference, stabilization) without assuming physics,
+//! relying solely on the structural and logical consequences defined by the framework
+//!
+//! ## Key Components
+//!
+//! * **Core Types (`onq::core`):** Defines fundamental concepts like `QduId`,
+//!   `PotentialityState` (complex state vectors), and `StableState`.
+//! * **Operations (`onq::operations`):** Defines quantum operations (`Operation`, `LockType`)
+//!   (analogs of H, X, Z, S, T, CNOT, CZ, CPhase, etc.).
+//! * **Circuits (`onq::circuits`):** Provides `Circuit` to represent ordered sequences
+//!   of quantum operations and `CircuitBuilder` for easy construction.
+//! * **Validation (`onq::validation`):** Offers functions to check state validity
+//!   (normalization, phase coherence interpretation).
+//! * **ONQ Virtual Machine (`onq::vm`):** An interpreter (`OnqVm`) that executes
+//!   `Program`s containing mixed sequences of `Instruction`s (quantum ops, classical ops,
+//!   control flow based on stabilization results).
+//! * **Simulation Engine (`onq::simulation::engine` - internal):** Handles the underlying
+//!   state vector evolution and stabilization logic.
+//!
+//! ## Interpretation & Differences from QM
+//!
+//! Users should be aware that `onq` simulation relies heavily on **interpretations**
+//! of the abstract and sometimes mathematically ambiguous framework.
+//! Key differences from standard Quantum Mechanics include:
+//!
+//! * **Stabilization vs Measurement:** `Stabilize` is deterministic (seeded by state hash),
+//!   uses scoring (interpreting Phase Coherence and Pattern Resonance),
+//!   and resolves potentiality based on framework rules, not probabilistic collapse.
+//! * **Locking:** `RelationalLock` uses non-unitary projection to model state integration.
+//! * **Operations:** Gate availability and behavior are strictly based on derivations.
+//!
+//! **See the project README for detailed explanations of concepts, interpretations, and limitations.**
+
 
 pub mod core;
 pub mod operations;
