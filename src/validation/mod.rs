@@ -194,3 +194,67 @@ pub fn validate_state(
 
     Ok(())
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use num_complex::Complex;
+    use std::f64::consts::FRAC_1_SQRT_2;
+
+    #[test]
+    fn test_normalization_check() {
+        let norm_vec = vec![Complex::new(FRAC_1_SQRT_2, 0.0), Complex::new(0.0, FRAC_1_SQRT_2)];
+        let unnorm_vec1 = vec![Complex::new(1.0, 0.0), Complex::new(1.0, 0.0)];
+        let unnorm_vec2 = vec![Complex::new(0.5, 0.0), Complex::new(0.5, 0.0)];
+        let state_ok = PotentialityState::new(norm_vec);
+        let state_bad1 = PotentialityState::new(unnorm_vec1);
+        let state_bad2 = PotentialityState::new(unnorm_vec2);
+
+        assert!(check_normalization(&state_ok, None).is_ok());
+        assert!(check_normalization(&state_bad1, None).is_err());
+        assert!(check_normalization(&state_bad2, None).is_err());
+        // Check tolerance
+        assert!(check_normalization(&state_bad2, Some(0.6)).is_ok()); // |0.5-1| = 0.5 < 0.6
+    }
+
+     #[test]
+    fn test_coherence_check() {
+        // State |+> = (1/sqrt(2))(|0> + |1>) -> score 1.0 -> Should pass > 0.618
+        let state_plus = PotentialityState::new(vec![Complex::new(FRAC_1_SQRT_2, 0.0), Complex::new(FRAC_1_SQRT_2, 0.0)]);
+        // State (1/sqrt(2))(|0> - |1>) -> score 0.0 -> Should fail > 0.618
+        let state_minus = PotentialityState::new(vec![Complex::new(FRAC_1_SQRT_2, 0.0), Complex::new(-FRAC_1_SQRT_2, 0.0)]);
+        // State (1/sqrt(2))(|0> + i|1>) -> score 0.5 -> Should fail > 0.618
+        let state_i = PotentialityState::new(vec![Complex::new(FRAC_1_SQRT_2, 0.0), Complex::new(0.0, FRAC_1_SQRT_2)]);
+
+        assert!(check_phase_coherence(&state_plus, 1, None, None).is_ok());
+        assert!(check_phase_coherence(&state_minus, 1, None, None).is_err());
+        assert!(check_phase_coherence(&state_i, 1, None, None).is_err());
+
+        // Check custom threshold
+        assert!(check_phase_coherence(&state_i, 1, Some(0.4), None).is_ok()); // 0.5 > 0.4
+        assert!(check_phase_coherence(&state_i, 1, Some(0.6), None).is_err()); // 0.5 <= 0.6
+    }
+
+     #[test]
+    fn test_validate_combined() {
+         let norm_vec = vec![Complex::new(FRAC_1_SQRT_2, 0.0), Complex::new(0.0, FRAC_1_SQRT_2)]; // score 1.0
+         let unnorm_vec = vec![Complex::new(1.0, 0.0), Complex::new(1.0, 0.0)];
+         let incoherent_vec = vec![Complex::new(FRAC_1_SQRT_2, 0.0), Complex::new(0.0, FRAC_1_SQRT_2)]; // score 0.5
+
+         let state_ok = PotentialityState::new(norm_vec);
+         let state_unnorm = PotentialityState::new(unnorm_vec);
+         let state_incoherent = PotentialityState::new(incoherent_vec);
+
+         // validate_state_uff currently only checks normalization
+         assert!(validate_state(&state_ok, 1, None, None, None).is_ok());
+         assert!(validate_state(&state_unnorm, 1, None, None, None).is_err());
+         // This state IS normalized but has low coherence. Since validate_state_uff doesn't check C1, it should pass.
+         assert!(validate_state(&state_incoherent, 1, None, None, None).is_ok());
+
+         // If we called check_phase_coherence explicitly, it would fail for state_incoherent
+         assert!(check_phase_coherence(&state_incoherent, 1, None, None).is_err());
+
+    }
+
+}
