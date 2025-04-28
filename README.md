@@ -1,6 +1,6 @@
 # onq: Operations for Next Generation Quantum Computing
 
-[Jupyter Notebook image](./examples/screenshot1 "Teleportation Circuit")
+![Jupyter Notebook image](./examples/screenshot1 "Teleportation Circuit")
 
 [![crates.io](https://img.shields.io/crates/v/onq.svg)](https://crates.io/crates/onq) [![docs.rs](https://docs.rs/onq/badge.svg)](https://docs.rs/onq) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
 
