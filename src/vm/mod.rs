@@ -1,18 +1,23 @@
 // src/vm/mod.rs
 
-//! Defines the structures and interpreter for the ONQ Virtual Machine (ONQ-VM).
-//! Enables mixed classical/quantum computation.
+//! Defines the structures and interpreter for the **ONQ Virtual Machine (ONQ-VM)**.
+//!
+//! This module provides the tools to execute programs containing a mix of
+//! derived quantum operations ([`Operation`](crate::operations::Operation)),
+//! based state stabilization ([`Instruction::Stabilize`]), classical computation,
+//! and control flow logic dependent on stabilization outcomes.
+//!
+//! ## Key Components:
+//! * [`Instruction`]: Enum defining all executable VM operations (quantum, classical, control flow, etc.).
+//! * [`Program`]: Represents a compiled, executable sequence of instructions with resolved labels.
+//! * [`ProgramBuilder`]: A utility for constructing `Program` instances fluently.
+//! * [`OnqVm`]: The virtual machine interpreter that manages state (quantum and classical)
+//!   and executes `Program` instructions step-by-step according to derived rules.
 
 // Declare modules
 pub mod program;
-mod interpreter;
+pub mod interpreter;
 
 // Re-export public types from submodules
 pub use program::{Instruction, Program, ProgramBuilder};
 pub use interpreter::OnqVm;
-
-// --- Keep other contents if any ---
-// (The code previously here, like Instruction/Program/Builder, should now be in program.rs)
-// Make sure the contents of the old mod.rs are moved to program.rs if needed.
-// If Instruction, Program, ProgramBuilder were defined directly in mod.rs before,
-// create program.rs and move them there, then use the pub use lines above.

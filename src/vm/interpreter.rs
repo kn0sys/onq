@@ -10,8 +10,40 @@ use std::collections::{HashMap, HashSet};
 
 /// The ONQ Virtual Machine (ONQ-VM).
 ///
-/// Interprets and executes `onq::vm::Program` instructions, managing both
-/// quantum state evolution (via `SimulationEngine`) and classical state (registers).
+/// Interprets and executes [`Program`](super::program::Program) instructions,
+/// managing both quantum state evolution (via an internal [`SimulationEngine`])
+/// and classical state (registers stored in a `HashMap`). It enables mixed
+/// classical/quantum algorithms with control flow based on intermediate
+/// stabilization results.
+///
+/// # Examples
+///
+/// ```
+/// # use onq::{ProgramBuilder, Instruction, Operation, QduId, vm::OnqVm, OnqError};
+/// # fn qid(id: u64) -> QduId { QduId(id) }
+/// // Simple program: H(0), Stabilize(0), Record(0, "m") -> Halt
+/// let program = ProgramBuilder::new()
+///     .pb_add(Instruction::QuantumOp(Operation::InteractionPattern {
+///         target: qid(0),
+///         pattern_id: "Superposition".to_string()
+///     }))
+///     .pb_add(Instruction::Stabilize { targets: vec![qid(0)] })
+///     .pb_add(Instruction::Record { qdu: qid(0), register: "m".to_string() })
+///     .pb_add(Instruction::Halt)
+///     .build()
+///     .expect("Failed to build program");
+///
+/// let mut vm = OnqVm::new();
+/// match vm.run(&program) {
+///     Ok(()) => {
+///         let measurement_result = vm.get_classical_register("m");
+///         println!("Stabilization outcome for QDU(0): {}", measurement_result);
+///         // Outcome (0 or 1) is deterministic for this VM run.
+///         assert!(measurement_result == 0 || measurement_result == 1);
+///     }
+///     Err(e) => eprintln!("VM run failed: {}", e),
+/// }
+/// ```
 #[derive(Debug)]
 pub struct OnqVm {
     /// The underlying simulation engine. Initialized during `run`.
