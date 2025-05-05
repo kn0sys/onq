@@ -108,6 +108,8 @@ mod tests {
     use std::f64::consts::FRAC_1_SQRT_2;
     use num_traits::Zero;
 
+    const TEST_TOLERANCE: f64 = 1e-9;
+
     // --- Helper Functions ---
     // (Copy qid and check_stable_state helpers here if not made pub elsewhere)
     fn qid(id: u64) -> QduId {
@@ -123,7 +125,31 @@ mod tests {
         }
     }
 
+    /// Asserts that two complex state vectors are approximately equal component-wise.
+    /// Panics if lengths differ or if the squared distance between any pair
+    /// of complex components exceeds tolerance * tolerance.
+    fn assert_complex_vec_approx_equal(
+        actual: &[Complex<f64>],
+        expected: &[Complex<f64>],
+        tolerance: f64, // Pass in the tolerance constant
+        context: &str    // Context message for better error reporting
+    ) {
+        assert_eq!(actual.len(), expected.len(), "Vector length mismatch - {}", context);
+        for i in 0..actual.len() {
+            // Calculate squared distance between complex numbers
+            // diff = (ax - ex) + i(ay - ey)
+            // dist_sq = |diff|^2 = (ax - ex)^2 + (ay - ey)^2
+            let diff = actual[i] - expected[i];
+            let dist_sq = diff.norm_sqr(); // norm_sqr() computes re*re + im*im
 
+            // Compare squared distance with squared tolerance to avoid sqrt
+            assert!(
+                dist_sq < tolerance * tolerance,
+                "Vector mismatch at index {} - Actual: {}, Expected: {}, DistSq: {:.3e}, Context: {}",
+                i, actual[i], expected[i], dist_sq, context
+            );
+        }
+    }
 
     #[test]
     fn test_stabilize_basis_state() -> Result<(), OnqError> {
@@ -276,5 +302,47 @@ mod tests {
         // Assert that stabilization now SUCCEEDS because C1 filter is removed
          assert!(stabilization_result.is_ok(), "Stabilization should now succeed for PI/2 phase state");
         Ok(()) // Test passes if the correct error occurred
+    }
+
+    #[test]
+    fn test_relational_lock_multi_qdu_context() -> Result<(), OnqError> {
+        println!("\n--- Test: Project onto BellPhiPlus in 3 QDU context ---");
+        let q0 = qid(0); // Spectator
+        let q1 = qid(1); // Target lock
+        let q2 = qid(2); // Target lock
+        let qdu_set: HashSet<QduId> = [q0, q1, q2].iter().cloned().collect();
+        let mut engine = SimulationEngine::init(&qdu_set)?; // Starts in |000>
+
+        let lock_op = Operation::RelationalLock {
+            qdu1: q1, // Lock q1 and q2
+            qdu2: q2,
+            lock_type: crate::LockType::BellPhiPlus, // Target |Φ+>_{12}
+            establish: true,
+        };
+
+        engine.apply_operation(&lock_op)?; // Apply projection to q1, q2 subspace
+
+        // Expected state is |0>_0 ⊗ |Φ+>_{12}
+        // |0> ⊗ (1/√2)(|00> + |11>) = (1/√2)(|000> + |011>)
+        // Indices: |000>=0, |001>=1, |010>=2, |011>=3, |100>=4, ... |111>=7
+        let sqrt2_inv = Complex::new(FRAC_1_SQRT_2, 0.0);
+        let expected_state_vec = vec![
+            sqrt2_inv,     // 000
+            Complex::zero(), // 001
+            Complex::zero(), // 010
+            sqrt2_inv,     // 011
+            Complex::zero(), // 100
+            Complex::zero(), // 101
+            Complex::zero(), // 110
+            Complex::zero(), // 111
+        ];
+
+        assert_complex_vec_approx_equal(
+            engine.get_state().vector(),
+            &expected_state_vec,
+            TEST_TOLERANCE, // Make sure TEST_TOLERANCE is defined
+            "Projecting onto BellPhiPlus for q1,q2 in |000> state"
+        );
+        Ok(())
     }
 }

@@ -182,104 +182,113 @@ impl SimulationEngine {
         Ok(())
     }
 
+    // In src/simulation/engine.rs, replace the existing project_onto_subspace_state
+
     /// Helper function to project the global state onto a specified target state
     /// within the 2-QDU subspace defined by idx1 and idx2. NON-UNITARY.
+    /// The final state is P|psi> / ||P|psi>|| where P = |target><target|.
     fn project_onto_subspace_state(
         &mut self,
         idx1: usize,
         idx2: usize,
-        target_state_normalized: &[Complex<f64>; 4], // e.g., Bell state vector [c00, c01, c10, c11]
+        target_state_normalized: &[Complex<f64>; 4], // |target> = [t00, t01, t10, t11]
     ) -> Result<(), OnqError> {
 
         let n = self.num_qdus;
         let dim = self.global_state.dim();
         let current_vector = self.global_state.vector();
-        let mut projected_vector = vec![Complex::zero(); dim]; // Start with zero vector
+        let mut projected_vector_unnormalized = vec![Complex::zero(); dim]; // Store P|psi> here
 
         // Determine bit positions
         let k_idx1 = n - 1 - idx1;
         let k_idx2 = n - 1 - idx2;
 
-        // Calculate the total overlap <target | current_psi>
-        // by summing over all segments of the state vector.
-        let mut total_overlap = Complex::zero();
+        // Construct the 4x4 projection matrix P = |target><target|
+        // P[row][col] = target[row] * target[col].conj()
+        let mut proj_matrix = [[Complex::zero(); 4]; 4];
+        for row in 0..4 {
+            for col in 0..4 {
+                proj_matrix[row][col] = target_state_normalized[row] * target_state_normalized[col].conj();
+            }
+        }
+
+        // Apply P_global = I @ ... @ P_sub @ ... @ I to the state vector
+        let mut total_projected_norm_sq: f64 = 0.0; // ||P|psi>||^2
 
         for i_other in 0..(dim / 4) {
             // Construct i_base for the other n-2 qdus
             let mut i_base = 0;
             let mut other_bit_mask = 1;
-            for current_k in 0..n {
-                 if current_k == k_idx1 || current_k == k_idx2 { } else {
-                     if (i_other & other_bit_mask) != 0 { i_base |= 1 << current_k; }
-                     other_bit_mask <<= 1;
-                 }
-            }
+            for current_k in 0..n { if current_k == k_idx1 || current_k == k_idx2 { } else { if (i_other & other_bit_mask) != 0 { i_base |= 1 << current_k; } other_bit_mask <<= 1; } }
+
             // Get indices for the 4 states in this segment's subspace
             let k1_mask = 1 << k_idx1;
             let k2_mask = 1 << k_idx2;
             let indices = [ i_base, i_base | k2_mask, i_base | k1_mask, i_base | k1_mask | k2_mask ];
+            if indices[3] >= dim { return Err(OnqError::SimulationError { message: format!("Internal error: Calculated index {} >= dimension {} in projection application.", indices[3], dim) }); }
 
-            // Check bounds
-            if indices[3] >= dim { return Err(OnqError::SimulationError { message: format!("Internal error: Calculated index {} >= dimension {} in project_onto_subspace_state.", indices[3], dim) }); }
+            // Extract current subspace amplitudes psi_sub = [psi00, psi01, psi10, psi11]
+            let psi_sub = [ current_vector[indices[0]], current_vector[indices[1]], current_vector[indices[2]], current_vector[indices[3]] ];
 
-            // Extract current subspace amplitudes psi = [psi00, psi01, psi10, psi11]
-            let psi_sub = [
-                current_vector[indices[0]], current_vector[indices[1]],
-                current_vector[indices[2]], current_vector[indices[3]]
-            ];
-
-            // Calculate overlap for this segment: <target | psi_sub> = sum(target[j].conj() * psi_sub[j])
-            let mut segment_overlap = Complex::zero();
-            for j in 0..4 {
-                segment_overlap += target_state_normalized[j].conj() * psi_sub[j];
+            // Calculate projected subspace vector: psi'_sub = P_sub * psi_sub
+            let mut psi_prime_sub = [Complex::zero(); 4];
+            for row in 0..4 {
+                for (col, _) in psi_sub.iter().enumerate() {
+                    psi_prime_sub[row] += proj_matrix[row][col] * psi_sub[col];
+                }
             }
-            total_overlap += segment_overlap; // Accumulate total overlap <target | current_psi>
+
+            // Write results back and accumulate norm squared
+            for j in 0..4 {
+                projected_vector_unnormalized[indices[j]] = psi_prime_sub[j];
+                total_projected_norm_sq += psi_prime_sub[j].norm_sqr(); // Accumulates ||P|psi_sub>||^2
+            }
         }
 
-        // Check if overlap is non-zero (projection is possible)
-        let overlap_norm_sq: f64  = total_overlap.norm_sqr();
-        if overlap_norm_sq < 1e-12 { // Use tolerance
+        // --- Start Debug Prints ---
+        // Recalculate total_overlap = <target|psi> just for checking against norm sq
+        let mut check_total_overlap: Complex<f64> = Complex::zero();
+        for i_other in 0..(dim / 4) {
+            let mut i_base = 0; let mut other_bit_mask = 1; for current_k in 0..n { if current_k == k_idx1 || current_k == k_idx2 { } else { if (i_other & other_bit_mask) != 0 { i_base |= 1 << current_k; } other_bit_mask <<= 1; } }
+            let k1_mask = 1 << k_idx1; let k2_mask = 1 << k_idx2;
+            let indices = [ i_base, i_base | k2_mask, i_base | k1_mask, i_base | k1_mask | k2_mask ];
+            if indices[3] >= dim { continue; } // Should not happen if first loop worked
+            let psi_sub = [ current_vector[indices[0]], current_vector[indices[1]], current_vector[indices[2]], current_vector[indices[3]] ];
+            for j in 0..4 { check_total_overlap += target_state_normalized[j].conj() * psi_sub[j]; }
+        }
+        let check_overlap_norm_sq = check_total_overlap.norm_sqr();
+        println!("[Debug Projection] Calculated ||P|psi>||^2 = {}", total_projected_norm_sq);
+        println!("[Debug Projection] Calculated |<target|psi>|^2 = {}", check_overlap_norm_sq);
+        // --- End Debug Prints ---
+
+
+        // Check if projection resulted in a non-zero state
+        if total_projected_norm_sq < 1e-12 { // Check if the projected state has norm ~0
             return Err(OnqError::Instability {
-                 message: format!("Projection failed: State has zero overlap with target lock state ({:?}).", target_state_normalized) // Improve LockType display later
+                 message: "Projection failed: State has zero overlap (or negligible norm after projection) with target lock state.".to_string()
             });
         }
 
-        // Construct the new state vector: total_overlap * |target_state> (in global space)
-        // The projection operator is P = |target><target|. Applied to psi gives |target><target|psi> = <target|psi> * |target>
-        // The resulting vector has the shape of |target_state> scaled by the complex overlap.
-        for i_other in 0..(dim / 4) {
-            // Construct i_base again (same logic as above)
-             let mut i_base = 0;
-             let mut other_bit_mask = 1;
-             for current_k in 0..n { if current_k == k_idx1 || current_k == k_idx2 { } else { if (i_other & other_bit_mask) != 0 { i_base |= 1 << current_k; } other_bit_mask <<= 1; } }
-             // Get indices again
-             let k1_mask = 1 << k_idx1;
-             let k2_mask = 1 << k_idx2;
-             let indices = [ i_base, i_base | k2_mask, i_base | k1_mask, i_base | k1_mask | k2_mask ];
+        // Renormalize the projected state vector
+        let norm_factor = 1.0 / total_projected_norm_sq.sqrt(); // Real normalization factor
 
-            // Check bounds
-            if indices[3] >= dim { return Err(OnqError::SimulationError { message: format!("Internal error: Calculated index {} >= dimension {} in project_onto_subspace_state (write phase).", indices[3], dim) }); }
+        // Create the final normalized vector
+        let final_state_vector: Vec<Complex<f64>> = projected_vector_unnormalized
+            .into_iter()
+            .map(|amp| amp * norm_factor) // Scale each complex amplitude
+            .collect();
 
-            // Assign the scaled target state components to the new vector
-            for j in 0..4 {
-                projected_vector[indices[j]] = total_overlap * target_state_normalized[j];
-            }
-        }
-
-
-        // Renormalize the entire state vector
-        // The norm squared of the projected state should be overlap_norm_sq
-        let norm_factor = Complex::new(1.0 / overlap_norm_sq.sqrt(), 0.0);
-        for amp in projected_vector.iter_mut() {
-            *amp *= norm_factor;
-        }
+        // --- Start Debug Print ---
+        // Check final norm before updating state
+        let final_norm_sq: f64 = final_state_vector.iter().map(|c| c.norm_sqr()).sum();
+        println!("[Debug Projection] Final state vector norm^2 after renormalization: {}", final_norm_sq);
+        // --- End Debug Print ---
 
         // Update the global state
-        self.global_state = PotentialityState::new(projected_vector);
+        self.global_state = PotentialityState::new(final_state_vector);
 
         Ok(())
     }
-
 
     /// Performs the stabilization process based on interpreted framework principles.
     ///
