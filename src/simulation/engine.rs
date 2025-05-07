@@ -256,11 +256,6 @@ impl SimulationEngine {
             let psi_sub = [ current_vector[indices[0]], current_vector[indices[1]], current_vector[indices[2]], current_vector[indices[3]] ];
             for j in 0..4 { check_total_overlap += target_state_normalized[j].conj() * psi_sub[j]; }
         }
-        let check_overlap_norm_sq = check_total_overlap.norm_sqr();
-        println!("[Debug Projection] Calculated ||P|psi>||^2 = {}", total_projected_norm_sq);
-        println!("[Debug Projection] Calculated |<target|psi>|^2 = {}", check_overlap_norm_sq);
-        // --- End Debug Prints ---
-
 
         // Check if projection resulted in a non-zero state
         if total_projected_norm_sq < 1e-12 { // Check if the projected state has norm ~0
@@ -277,12 +272,6 @@ impl SimulationEngine {
             .into_iter()
             .map(|amp| amp * norm_factor) // Scale each complex amplitude
             .collect();
-
-        // --- Start Debug Print ---
-        // Check final norm before updating state
-        let final_norm_sq: f64 = final_state_vector.iter().map(|c| c.norm_sqr()).sum();
-        println!("[Debug Projection] Final state vector norm^2 after renormalization: {}", final_norm_sq);
-        // --- End Debug Print ---
 
         // Update the global state
         self.global_state = PotentialityState::new(final_state_vector);
