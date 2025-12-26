@@ -55,7 +55,6 @@ pub struct Circuit {
     /// The ordered sequence of operations defining the circuit's logic.
     /// The order is critical and directly reflects (Sequential Ordering).
     operations: Vec<Operation>,
-
     // --- Potential Future Fields ---
     // /// Optional name for identification or debugging.
     // name: Option<String>,
@@ -229,10 +228,18 @@ impl fmt::Display for Circuit {
         let mut sorted_qdus: Vec<QduId> = self.qdus.iter().cloned().collect();
         sorted_qdus.sort(); // Sort numerically for consistent row order
         let num_qdus = sorted_qdus.len();
-        let qdu_to_row: HashMap<QduId, usize> = sorted_qdus.iter().enumerate().map(|(i, qid)| (*qid, i)).collect();
+        let qdu_to_row: HashMap<QduId, usize> = sorted_qdus
+            .iter()
+            .enumerate()
+            .map(|(i, qid)| (*qid, i))
+            .collect();
 
         // Determine label width
-        let max_label_width = sorted_qdus.iter().map(|qid| format!("{}", qid).len()).max().unwrap_or(0);
+        let max_label_width = sorted_qdus
+            .iter()
+            .map(|qid| format!("{}", qid).len())
+            .max()
+            .unwrap_or(0);
         let label_padding = " ".repeat(max_label_width + 2); // Label + ": "
 
         // Grid dimensions and padding
@@ -256,7 +263,12 @@ impl fmt::Display for Circuit {
                 let total_dashes = GATE_WIDTH - slen;
                 let pre_dashes = total_dashes / 2;
                 let post_dashes = total_dashes - pre_dashes;
-                format!("{}{}{}", H_WIRE.to_string().repeat(pre_dashes), symbol, H_WIRE.to_string().repeat(post_dashes))
+                format!(
+                    "{}{}{}",
+                    H_WIRE.to_string().repeat(pre_dashes),
+                    symbol,
+                    H_WIRE.to_string().repeat(post_dashes)
+                )
             }
         }
 
@@ -282,17 +294,23 @@ impl fmt::Display for Circuit {
                             "PhiRotate" => "ΦR", // Using Φ symbol + R
                             "Superposition" => "H",
                             "SqrtFlip" => "√X", // Using √ symbol + X
-                            _ => "?", // Unknown pattern
+                            _ => "?",           // Unknown pattern
                         };
                         op_grid[*r][t] = format_gate(symbol);
                     }
                 }
-                Operation::ControlledInteraction { control, target, pattern_id } => {
-                    if let (Some(r_ctrl), Some(r_tgt)) = (qdu_to_row.get(control), qdu_to_row.get(target)) {
+                Operation::ControlledInteraction {
+                    control,
+                    target,
+                    pattern_id,
+                } => {
+                    if let (Some(r_ctrl), Some(r_tgt)) =
+                        (qdu_to_row.get(control), qdu_to_row.get(target))
+                    {
                         let target_symbol = match pattern_id.as_str() {
-                             "QualityFlip" => "X", // Most common controlled op shown this way
-                             // Add other specific symbols if needed, default to generic target
-                             _ => "●", // Generic controlled target symbol
+                            "QualityFlip" => "X", // Most common controlled op shown this way
+                            // Add other specific symbols if needed, default to generic target
+                            _ => "●", // Generic controlled target symbol
                         };
                         op_grid[*r_ctrl][t] = format_gate("@");
                         op_grid[*r_tgt][t] = format_gate(target_symbol);
@@ -301,12 +319,12 @@ impl fmt::Display for Circuit {
                         let r_min = (*r_ctrl).min(*r_tgt);
                         let r_max = (*r_ctrl).max(*r_tgt);
                         for row_vec in v_connect.iter_mut().take(r_max).skip(r_min) {
-                             row_vec[t] = V_WIRE;
-                         }
+                            row_vec[t] = V_WIRE;
+                        }
                     }
                 }
-                 Operation::RelationalLock { qdu1, qdu2, .. } => {
-                     if let (Some(r1), Some(r2)) = (qdu_to_row.get(qdu1), qdu_to_row.get(qdu2)) {
+                Operation::RelationalLock { qdu1, qdu2, .. } => {
+                    if let (Some(r1), Some(r2)) = (qdu_to_row.get(qdu1), qdu_to_row.get(qdu2)) {
                         let r_min = (*r1).min(*r2);
                         let r_max = (*r1).max(*r2);
                         op_grid[r_min][t] = format_gate("@"); // Use @ for one end
@@ -314,8 +332,8 @@ impl fmt::Display for Circuit {
 
                         // Add vertical connection lines
                         for row_vec in v_connect.iter_mut().take(r_max).skip(r_min) {
-                             row_vec[t] = V_WIRE;
-                         }
+                            row_vec[t] = V_WIRE;
+                        }
                     }
                 }
                 Operation::Stabilize { targets } => {
@@ -330,7 +348,11 @@ impl fmt::Display for Circuit {
         }
 
         // --- Format Output String ---
-        writeln!(f, "onq::Circuit[{} operations on {} QDUs]", num_ops, num_qdus)?;
+        writeln!(
+            f,
+            "onq::Circuit[{} operations on {} QDUs]",
+            num_ops, num_qdus
+        )?;
         for r in 0..num_qdus {
             // Print QDU label row
             let label = format!("{}: ", sorted_qdus[r]);
@@ -340,12 +362,18 @@ impl fmt::Display for Circuit {
             // Print vertical connector row (if not the last QDU)
             if r < num_qdus - 1 {
                 write!(f, "{}", label_padding)?; // Padding for alignment
-                for t in 0..num_ops {
-                    let connector = v_connect[r][t];
+                for t in v_connect.iter().take(num_ops) {
+                    let connector = t[r];
                     let padding_needed = GATE_WIDTH.saturating_sub(1); // Width minus 1 for the connector char
                     let pre_pad = padding_needed / 2;
                     let post_pad = padding_needed - pre_pad;
-                    write!(f, "{}{}{}", " ".repeat(pre_pad), connector, " ".repeat(post_pad))?;
+                    write!(
+                        f,
+                        "{}{}{}",
+                        " ".repeat(pre_pad),
+                        connector,
+                        " ".repeat(post_pad)
+                    )?;
                 }
                 writeln!(f)?; // Newline after connector row
             }
@@ -356,7 +384,7 @@ impl fmt::Display for Circuit {
 
 // Keep the Debug impl delegating to Display
 impl fmt::Debug for Circuit {
-     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-       fmt::Display::fmt(self, f)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
