@@ -362,8 +362,7 @@ impl fmt::Display for Circuit {
             // Print vertical connector row (if not the last QDU)
             if r < num_qdus - 1 {
                 write!(f, "{}", label_padding)?; // Padding for alignment
-                for t in v_connect.iter().take(num_ops) {
-                    let connector = t[r];
+                for connector in v_connect[r].iter().take(num_ops) {
                     let padding_needed = GATE_WIDTH.saturating_sub(1); // Width minus 1 for the connector char
                     let pre_pad = padding_needed / 2;
                     let post_pad = padding_needed - pre_pad;
