@@ -1,91 +1,30 @@
 // src/validation/mod.rs
 
-//! Provides functions to validate `PotentialityState` based on principles.
+//! Provides functions to validate `GeometricPotentialityState` based on localized tensor principles.
 
 use crate::core::{OnqError, PotentialityState};
 use num_complex::Complex;
 
-// Default tolerance values (can be overridden by caller)
-const DEFAULT_NORM_TOLERANCE: f64 = 1e-9;
-const DEFAULT_AMPLITUDE_TOLERANCE: f64 = 1e-12;
-const DEFAULT_COHERENCE_THRESHOLD: f64 = 0.618;
-
-// --- Helper Functions ---
-
-/// Helper to calculate the interpretive (Phase Coherence) for a specific basis state k.
-/// Measures phase agreement with nearest neighbour basis states that have non-negligible amplitude.
-/// Returns a score between 0.0 and 1.0. (Internal to this module)
-pub fn calculate_c1_score_for_state_k(
-    k: usize,
-    state_vector: &[Complex<f64>],
-    num_qdus: usize,
-    amplitude_tolerance: f64,
-) -> f64 {
-    if num_qdus == 0 {
-        return 1.0;
-    } // Coherence is perfect for 0 QDUs
-
-    let amp_k = state_vector[k];
-    let amp_k_norm_sq = amp_k.norm_sqr();
-
-    // If the amplitude of state k itself is negligible, coherence contribution is considered low/zero.
-    if amp_k_norm_sq < amplitude_tolerance {
-        return 0.0;
-    }
-    let phase_k = amp_k.arg();
-
-    let mut total_cos_diff = 0.0;
-    let mut num_significant_neighbours = 0;
-
-    for bit_pos in 0..num_qdus {
-        let neighbour_k = k ^ (1 << bit_pos); // Index of neighbour differing at bit_pos
-        // Check bounds: neighbour index must be less than state_vector length
-        if neighbour_k < state_vector.len() {
-            let amp_neighbour = state_vector[neighbour_k];
-            // Only consider neighbours with significant amplitude for phase comparison
-            if amp_neighbour.norm_sqr() > amplitude_tolerance {
-                let phase_neighbour = amp_neighbour.arg();
-                total_cos_diff += (phase_k - phase_neighbour).cos();
-                num_significant_neighbours += 1;
-            }
-        }
-    }
-
-    if num_significant_neighbours == 0 {
-        // No significant neighbours to compare phase with - consider it coherent by default?
-        // This happens for basis states in N=1 case or states with sparse neighbours.
-        return 1.0;
-    }
-
-    let avg_cos_diff = total_cos_diff / (num_significant_neighbours as f64);
-    // Normalize score to be between 0.0 and 1.0
-    let score = (1.0 + avg_cos_diff) / 2.0;
-    score.clamp(0.0, 1.0) // Clamp for robustness
-}
+// Default tolerance values
+const DEFAULT_NORM_TOLERANCE: f64 = 1e-6; // Slightly relaxed for tensor product accumulation
+const DEFAULT_COHERENCE_THRESHOLD: f64 = 0.618; // The Golden Ratio (1/phi)
 
 // --- Public Validation Functions ---
 
-/// Checks if the state vector is normalized (sum of squared amplitudes ≈ 1.0).
-/// This relates to (`∑P_n converges`) if P_n is interpreted as probability.
-///
-/// # Arguments
-/// * `state` - The `PotentialityState` to check.
-/// * `tolerance` - Allowed deviation from 1.0 (e.g., 1e-9). Defaults are available.
-///
-/// # Returns
-/// * `Ok(())` if normalized within tolerance.
-/// * `Err(OnqError::Incoherence)` if normalization fails.
+/// Checks if the tensor network is normalized.
+/// In a geometric network, global norm is the product of local tensor norms.
 pub fn check_normalization(
     state: &PotentialityState,
     tolerance: Option<f64>,
 ) -> Result<(), OnqError> {
     let effective_tolerance = tolerance.unwrap_or(DEFAULT_NORM_TOLERANCE);
-    let norm_sq: f64 = state.global_norm_sq();
+    let norm_sq = state.global_norm_sq();
+
     if (norm_sq - 1.0).abs() > effective_tolerance {
         Err(OnqError::Incoherence {
             message: format!(
-                "State vector normalization failed. Sum(|c_i|^2) = {} (Deviation > {})",
-                norm_sq, effective_tolerance
+                "State tensor normalization failed. Total norm squared: {}",
+                norm_sq
             ),
         })
     } else {
@@ -93,92 +32,72 @@ pub fn check_normalization(
     }
 }
 
-/// Calculates a global measure of phase coherence.
-/// It computes the average C1 score across all basis states, weighted by their amplitude squared.
-///
-/// # Arguments
-/// * `state` - The `PotentialityState` to analyze.
-/// * `num_qdus` - The number of QDUs represented by the state vector.
-/// * `amplitude_tolerance` - Optional threshold below which amplitudes are considered negligible.
-///
-/// # Returns
-/// * A global coherence score between 0.0 and 1.0.
-pub fn calculate_global_phase_coherence(
-    state: &PotentialityState,
-    num_qdus: usize,
-    amplitude_tolerance: Option<f64>,
-) -> f64 {
-    let effective_amp_tolerance = amplitude_tolerance.unwrap_or(DEFAULT_AMPLITUDE_TOLERANCE);
+/// Calculates a global measure of phase coherence for the geometric matrix.
+/// It computes the average internal phase alignment of all active LocalTensors.
+/// Calculates a global measure of phase coherence for the geometric matrix.
+/// It computes the average internal phase alignment of all active LocalTensors.
+pub fn calculate_global_phase_coherence(state: &PotentialityState) -> f64 {
+    if state.network.is_empty() {
+        return 1.0;
+    }
 
-    0.0
+    let mut total_coherence = 0.0;
+    let mut active_nodes = 0;
+
+    for tensor in state.network.values() {
+        let amp0 = tensor.core_state[0];
+        let amp1 = tensor.core_state[1];
+
+        // A node firmly in |0> or |1> doesn't have an internal phase relationship to measure.
+        if amp0.norm_sqr() > 1e-12 && amp1.norm_sqr() > 1e-12 {
+            // Local coherence based on phase alignment of the superposition (|0> vs |1>)
+            let phase_diff = (amp0.arg() - amp1.arg()).abs();
+
+            // Cosine of phase diff maps perfect alignment (0) to 1.0, and opposition (PI) to 0.0
+            let local_coherence = (1.0 + phase_diff.cos()) / 2.0;
+
+            total_coherence += local_coherence;
+            active_nodes += 1;
+        }
+    }
+
+    if active_nodes == 0 {
+        return 1.0;
+    } // A baseline or fully resolved state is perfectly coherent
+
+    total_coherence / (active_nodes as f64)
 }
 
 /// Checks if the state meets the Phase Coherence threshold (> threshold).
-/// Uses the global weighted average coherence score calculated by `calculate_global_phase_coherence`.
-///
-/// # Arguments
-/// * `state` - The `PotentialityState` to check.
-/// * `num_qdus` - The number of QDUs represented by the state vector.
-/// * `threshold` - Optional minimum required coherence score (defaults to 0.618).
-/// * `amplitude_tolerance` - Optional threshold for negligible amplitudes.
-///
-/// # Returns
-/// * `Ok(())` if the coherence threshold is met.
-/// * `Err(OnqError::Incoherence)` if the threshold is not met.
 pub fn check_phase_coherence(
     state: &PotentialityState,
-    num_qdus: usize,
     threshold: Option<f64>,
-    amplitude_tolerance: Option<f64>,
 ) -> Result<(), OnqError> {
     let effective_threshold = threshold.unwrap_or(DEFAULT_COHERENCE_THRESHOLD);
-    let effective_amp_tolerance = amplitude_tolerance.unwrap_or(DEFAULT_AMPLITUDE_TOLERANCE);
+    let global_coherence = calculate_global_phase_coherence(state);
 
-    let global_coherence =
-        calculate_global_phase_coherence(state, num_qdus, Some(effective_amp_tolerance));
     if global_coherence > effective_threshold {
         Ok(())
     } else {
         Err(OnqError::Incoherence {
             message: format!(
-                "Global Phase Coherence check failed. Score {:.4} <= Threshold {:.4}",
+                "Global Geometric Coherence check failed. Score {:.4} <= Threshold {:.4}",
                 global_coherence, effective_threshold
             ),
         })
     }
 }
 
-/// Performs basic validation checks on the state based on criteria.
-/// Currently only checks normalization. Coherence checks may be applied elsewhere (e.g., pre-stabilization).
-/// Uses default tolerance values unless specified.
-///
-/// # Arguments
-/// * `state` - The `PotentialityState` to validate.
-/// * `num_qdus` - The number of QDUs represented by the state vector. (Currently unused here)
-/// * `norm_tolerance` - Optional allowed deviation from 1.0 for normalization.
-/// * `coherence_threshold` - Optional: Currently UNUSED in this function.
-/// * `amplitude_tolerance` - Optional: Currently UNUSED in this function.
-///
-/// # Returns
-/// * `Ok(())` if all checks pass.
-/// * `Err(OnqError::Incoherence)` if any check fails.
+/// Performs basic validation checks on the geometric state.
+/// We keep the unused parameters prefixed with `_` so we don't break the VM interpreter calls.
 pub fn validate_state(
     state: &PotentialityState,
     _num_qdus: usize,
-    _phase_tolerance: Option<f64>,
+    norm_tolerance: Option<f64>,
+    _coherence_threshold: Option<f64>,
     _amplitude_tolerance: Option<f64>,
-    _c1_threshold: Option<f64>,
 ) -> Result<(), OnqError> {
-    let norm_sq = state.global_norm_sq();
-
-    if (norm_sq - 1.0).abs() > 1e-6 {
-        return Err(OnqError::Incoherence {
-            message: format!(
-                "State normalization failed! Total norm squared: {}",
-                norm_sq
-            ),
-        });
-    }
+    check_normalization(state, norm_tolerance)?;
     Ok(())
 }
 
@@ -189,65 +108,43 @@ mod tests {
     use std::f64::consts::FRAC_1_SQRT_2;
 
     #[test]
-    fn test_normalization_check() {
-        let norm_vec = vec![
-            Complex::new(FRAC_1_SQRT_2, 0.0),
-            Complex::new(0.0, FRAC_1_SQRT_2),
-        ];
-        let unnorm_vec1 = vec![Complex::new(1.0, 0.0), Complex::new(1.0, 0.0)];
-        let unnorm_vec2 = vec![Complex::new(0.5, 0.0), Complex::new(0.5, 0.0)];
-        let state_ok = PotentialityState::new();
-        let state_bad1 = PotentialityState::new();
-        let state_bad2 = PotentialityState::new();
+    fn test_tensor_normalization_check() {
+        let mut state = PotentialityState::new();
 
-        assert!(check_normalization(&state_ok, None).is_ok());
-        assert!(check_normalization(&state_bad1, None).is_err());
-        assert!(check_normalization(&state_bad2, None).is_err());
-        // Check tolerance
-        assert!(check_normalization(&state_bad2, Some(0.6)).is_ok()); // |0.5-1| = 0.5 < 0.6
+        // Baseline state is entirely |0>, so norm should be exactly 1.0
+        assert!(check_normalization(&state, None).is_ok());
+
+        // Sabotage the network by artificially corrupting QDU 0's local tensor
+        if let Some(tensor) = state.network.get_mut(&0) {
+            tensor.core_state[0] = Complex::new(0.5, 0.0); // Drops norm below 1.0
+        }
+
+        // The geometric check should catch the localized collapse
+        assert!(check_normalization(&state, None).is_err());
     }
 
     #[test]
-    fn test_coherence_check() {
-        // State |+> = (1/sqrt(2))(|0> + |1>) -> score 1.0 -> Should pass > 0.618
-        let state_plus = PotentialityState::new();
-        // State (1/sqrt(2))(|0> - |1>) -> score 0.0 -> Should fail > 0.618
-        let state_minus = PotentialityState::new();
-        // State (1/sqrt(2))(|0> + i|1>) -> score 0.5 -> Should fail > 0.618
-        let state_i = PotentialityState::new();
+    fn test_geometric_coherence_check() {
+        let mut state = PotentialityState::new();
 
-        assert!(check_phase_coherence(&state_plus, 1, None, None).is_ok());
-        assert!(check_phase_coherence(&state_minus, 1, None, None).is_err());
-        assert!(check_phase_coherence(&state_i, 1, None, None).is_err());
+        // Put QDU 0 into |+> state (Highly coherent, phases match)
+        if let Some(tensor) = state.network.get_mut(&0) {
+            tensor.core_state = [
+                Complex::new(FRAC_1_SQRT_2, 0.0),
+                Complex::new(FRAC_1_SQRT_2, 0.0),
+            ];
+        }
+        // Score will be 1.0 -> Should easily pass the 0.618 Golden Ratio threshold
+        assert!(check_phase_coherence(&state, None).is_ok());
 
-        // Check custom threshold
-        assert!(check_phase_coherence(&state_i, 1, Some(0.4), None).is_ok()); // 0.5 > 0.4
-        assert!(check_phase_coherence(&state_i, 1, Some(0.6), None).is_err()); // 0.5 <= 0.6
-    }
-
-    #[test]
-    fn test_validate_combined() {
-        let norm_vec = vec![
-            Complex::new(FRAC_1_SQRT_2, 0.0),
-            Complex::new(0.0, FRAC_1_SQRT_2),
-        ]; // score 1.0
-        let unnorm_vec = vec![Complex::new(1.0, 0.0), Complex::new(1.0, 0.0)];
-        let incoherent_vec = vec![
-            Complex::new(FRAC_1_SQRT_2, 0.0),
-            Complex::new(0.0, FRAC_1_SQRT_2),
-        ]; // score 0.5
-
-        let state_ok = PotentialityState::new();
-        let state_unnorm = PotentialityState::new();
-        let state_incoherent = PotentialityState::new();
-
-        // validate_state_uff currently only checks normalization
-        assert!(validate_state(&state_ok, 1, None, None, None).is_ok());
-        assert!(validate_state(&state_unnorm, 1, None, None, None).is_err());
-        // This state IS normalized but has low coherence. Since validate_state_uff doesn't check C1, it should pass.
-        assert!(validate_state(&state_incoherent, 1, None, None, None).is_ok());
-
-        // If we called check_phase_coherence explicitly, it would fail for state_incoherent
-        assert!(check_phase_coherence(&state_incoherent, 1, None, None).is_err());
+        // Put QDU 0 into |-> state (Phases differ by PI, destructive interference)
+        if let Some(tensor) = state.network.get_mut(&0) {
+            tensor.core_state = [
+                Complex::new(FRAC_1_SQRT_2, 0.0),
+                Complex::new(-FRAC_1_SQRT_2, 0.0),
+            ];
+        }
+        // Score will be 0.0 -> Should fail the threshold
+        assert!(check_phase_coherence(&state, None).is_err());
     }
 }
