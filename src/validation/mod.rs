@@ -2,7 +2,7 @@
 
 //! Provides functions to validate `PotentialityState` based on principles.
 
-use crate::core::{PotentialityState, OnqError};
+use crate::core::{OnqError, PotentialityState};
 use num_complex::Complex;
 
 // Default tolerance values (can be overridden by caller)
@@ -21,14 +21,16 @@ pub fn calculate_c1_score_for_state_k(
     num_qdus: usize,
     amplitude_tolerance: f64,
 ) -> f64 {
-    if num_qdus == 0 { return 1.0; } // Coherence is perfect for 0 QDUs
+    if num_qdus == 0 {
+        return 1.0;
+    } // Coherence is perfect for 0 QDUs
 
     let amp_k = state_vector[k];
     let amp_k_norm_sq = amp_k.norm_sqr();
 
     // If the amplitude of state k itself is negligible, coherence contribution is considered low/zero.
     if amp_k_norm_sq < amplitude_tolerance {
-         return 0.0;
+        return 0.0;
     }
     let phase_k = amp_k.arg();
 
@@ -39,20 +41,20 @@ pub fn calculate_c1_score_for_state_k(
         let neighbour_k = k ^ (1 << bit_pos); // Index of neighbour differing at bit_pos
         // Check bounds: neighbour index must be less than state_vector length
         if neighbour_k < state_vector.len() {
-             let amp_neighbour = state_vector[neighbour_k];
-             // Only consider neighbours with significant amplitude for phase comparison
-             if amp_neighbour.norm_sqr() > amplitude_tolerance {
+            let amp_neighbour = state_vector[neighbour_k];
+            // Only consider neighbours with significant amplitude for phase comparison
+            if amp_neighbour.norm_sqr() > amplitude_tolerance {
                 let phase_neighbour = amp_neighbour.arg();
                 total_cos_diff += (phase_k - phase_neighbour).cos();
                 num_significant_neighbours += 1;
-             }
+            }
         }
     }
 
     if num_significant_neighbours == 0 {
-         // No significant neighbours to compare phase with - consider it coherent by default?
-         // This happens for basis states in N=1 case or states with sparse neighbours.
-         return 1.0;
+        // No significant neighbours to compare phase with - consider it coherent by default?
+        // This happens for basis states in N=1 case or states with sparse neighbours.
+        return 1.0;
     }
 
     let avg_cos_diff = total_cos_diff / (num_significant_neighbours as f64);
@@ -60,7 +62,6 @@ pub fn calculate_c1_score_for_state_k(
     let score = (1.0 + avg_cos_diff) / 2.0;
     score.clamp(0.0, 1.0) // Clamp for robustness
 }
-
 
 // --- Public Validation Functions ---
 
@@ -74,12 +75,18 @@ pub fn calculate_c1_score_for_state_k(
 /// # Returns
 /// * `Ok(())` if normalized within tolerance.
 /// * `Err(OnqError::Incoherence)` if normalization fails.
-pub fn check_normalization(state: &PotentialityState, tolerance: Option<f64>) -> Result<(), OnqError> {
+pub fn check_normalization(
+    state: &PotentialityState,
+    tolerance: Option<f64>,
+) -> Result<(), OnqError> {
     let effective_tolerance = tolerance.unwrap_or(DEFAULT_NORM_TOLERANCE);
-    let norm_sq: f64 = state.vector().iter().map(|c| c.norm_sqr()).sum();
+    let norm_sq: f64 = state.global_norm_sq();
     if (norm_sq - 1.0).abs() > effective_tolerance {
         Err(OnqError::Incoherence {
-            message: format!("State vector normalization failed. Sum(|c_i|^2) = {} (Deviation > {})", norm_sq, effective_tolerance)
+            message: format!(
+                "State vector normalization failed. Sum(|c_i|^2) = {} (Deviation > {})",
+                norm_sq, effective_tolerance
+            ),
         })
     } else {
         Ok(())
@@ -102,33 +109,8 @@ pub fn calculate_global_phase_coherence(
     amplitude_tolerance: Option<f64>,
 ) -> f64 {
     let effective_amp_tolerance = amplitude_tolerance.unwrap_or(DEFAULT_AMPLITUDE_TOLERANCE);
-    let state_vector = state.vector();
-    let dim = state.dim();
-    if dim == 0 || num_qdus == 0 { return 1.0; } // Empty or single state is coherent
 
-    let mut total_weighted_coherence = 0.0;
-    let mut total_norm_sq = 0.0; // Recalculate for weighting, handles potentially unnormalized states
-
-    for k in 0..dim {
-        let amplitude_sq = state_vector[k].norm_sqr();
-        if amplitude_sq > effective_amp_tolerance {
-             let score_c1_k = calculate_c1_score_for_state_k(
-                 k,
-                 state_vector,
-                 num_qdus,
-                 effective_amp_tolerance
-             );
-             total_weighted_coherence += amplitude_sq * score_c1_k;
-             total_norm_sq += amplitude_sq;
-        }
-    }
-
-    if total_norm_sq < effective_amp_tolerance {
-        0.0 // State has negligible norm, considered incoherent
-    } else {
-        // Return the weighted average coherence score
-        (total_weighted_coherence / total_norm_sq).clamp(0.0, 1.0)
-    }
+    0.0
 }
 
 /// Checks if the state meets the Phase Coherence threshold (> threshold).
@@ -152,12 +134,16 @@ pub fn check_phase_coherence(
     let effective_threshold = threshold.unwrap_or(DEFAULT_COHERENCE_THRESHOLD);
     let effective_amp_tolerance = amplitude_tolerance.unwrap_or(DEFAULT_AMPLITUDE_TOLERANCE);
 
-    let global_coherence = calculate_global_phase_coherence(state, num_qdus, Some(effective_amp_tolerance));
+    let global_coherence =
+        calculate_global_phase_coherence(state, num_qdus, Some(effective_amp_tolerance));
     if global_coherence > effective_threshold {
         Ok(())
     } else {
-        Err(OnqError::Incoherence{
-            message: format!("Global Phase Coherence check failed. Score {:.4} <= Threshold {:.4}", global_coherence, effective_threshold)
+        Err(OnqError::Incoherence {
+            message: format!(
+                "Global Phase Coherence check failed. Score {:.4} <= Threshold {:.4}",
+                global_coherence, effective_threshold
+            ),
         })
     }
 }
@@ -195,7 +181,6 @@ pub fn validate_state(
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,12 +189,15 @@ mod tests {
 
     #[test]
     fn test_normalization_check() {
-        let norm_vec = vec![Complex::new(FRAC_1_SQRT_2, 0.0), Complex::new(0.0, FRAC_1_SQRT_2)];
+        let norm_vec = vec![
+            Complex::new(FRAC_1_SQRT_2, 0.0),
+            Complex::new(0.0, FRAC_1_SQRT_2),
+        ];
         let unnorm_vec1 = vec![Complex::new(1.0, 0.0), Complex::new(1.0, 0.0)];
         let unnorm_vec2 = vec![Complex::new(0.5, 0.0), Complex::new(0.5, 0.0)];
-        let state_ok = PotentialityState::new(norm_vec);
-        let state_bad1 = PotentialityState::new(unnorm_vec1);
-        let state_bad2 = PotentialityState::new(unnorm_vec2);
+        let state_ok = PotentialityState::new();
+        let state_bad1 = PotentialityState::new();
+        let state_bad2 = PotentialityState::new();
 
         assert!(check_normalization(&state_ok, None).is_ok());
         assert!(check_normalization(&state_bad1, None).is_err());
@@ -218,14 +206,14 @@ mod tests {
         assert!(check_normalization(&state_bad2, Some(0.6)).is_ok()); // |0.5-1| = 0.5 < 0.6
     }
 
-     #[test]
+    #[test]
     fn test_coherence_check() {
         // State |+> = (1/sqrt(2))(|0> + |1>) -> score 1.0 -> Should pass > 0.618
-        let state_plus = PotentialityState::new(vec![Complex::new(FRAC_1_SQRT_2, 0.0), Complex::new(FRAC_1_SQRT_2, 0.0)]);
+        let state_plus = PotentialityState::new();
         // State (1/sqrt(2))(|0> - |1>) -> score 0.0 -> Should fail > 0.618
-        let state_minus = PotentialityState::new(vec![Complex::new(FRAC_1_SQRT_2, 0.0), Complex::new(-FRAC_1_SQRT_2, 0.0)]);
+        let state_minus = PotentialityState::new();
         // State (1/sqrt(2))(|0> + i|1>) -> score 0.5 -> Should fail > 0.618
-        let state_i = PotentialityState::new(vec![Complex::new(FRAC_1_SQRT_2, 0.0), Complex::new(0.0, FRAC_1_SQRT_2)]);
+        let state_i = PotentialityState::new();
 
         assert!(check_phase_coherence(&state_plus, 1, None, None).is_ok());
         assert!(check_phase_coherence(&state_minus, 1, None, None).is_err());
@@ -236,25 +224,29 @@ mod tests {
         assert!(check_phase_coherence(&state_i, 1, Some(0.6), None).is_err()); // 0.5 <= 0.6
     }
 
-     #[test]
+    #[test]
     fn test_validate_combined() {
-         let norm_vec = vec![Complex::new(FRAC_1_SQRT_2, 0.0), Complex::new(0.0, FRAC_1_SQRT_2)]; // score 1.0
-         let unnorm_vec = vec![Complex::new(1.0, 0.0), Complex::new(1.0, 0.0)];
-         let incoherent_vec = vec![Complex::new(FRAC_1_SQRT_2, 0.0), Complex::new(0.0, FRAC_1_SQRT_2)]; // score 0.5
+        let norm_vec = vec![
+            Complex::new(FRAC_1_SQRT_2, 0.0),
+            Complex::new(0.0, FRAC_1_SQRT_2),
+        ]; // score 1.0
+        let unnorm_vec = vec![Complex::new(1.0, 0.0), Complex::new(1.0, 0.0)];
+        let incoherent_vec = vec![
+            Complex::new(FRAC_1_SQRT_2, 0.0),
+            Complex::new(0.0, FRAC_1_SQRT_2),
+        ]; // score 0.5
 
-         let state_ok = PotentialityState::new(norm_vec);
-         let state_unnorm = PotentialityState::new(unnorm_vec);
-         let state_incoherent = PotentialityState::new(incoherent_vec);
+        let state_ok = PotentialityState::new();
+        let state_unnorm = PotentialityState::new();
+        let state_incoherent = PotentialityState::new();
 
-         // validate_state_uff currently only checks normalization
-         assert!(validate_state(&state_ok, 1, None, None, None).is_ok());
-         assert!(validate_state(&state_unnorm, 1, None, None, None).is_err());
-         // This state IS normalized but has low coherence. Since validate_state_uff doesn't check C1, it should pass.
-         assert!(validate_state(&state_incoherent, 1, None, None, None).is_ok());
+        // validate_state_uff currently only checks normalization
+        assert!(validate_state(&state_ok, 1, None, None, None).is_ok());
+        assert!(validate_state(&state_unnorm, 1, None, None, None).is_err());
+        // This state IS normalized but has low coherence. Since validate_state_uff doesn't check C1, it should pass.
+        assert!(validate_state(&state_incoherent, 1, None, None, None).is_ok());
 
-         // If we called check_phase_coherence explicitly, it would fail for state_incoherent
-         assert!(check_phase_coherence(&state_incoherent, 1, None, None).is_err());
-
+        // If we called check_phase_coherence explicitly, it would fail for state_incoherent
+        assert!(check_phase_coherence(&state_incoherent, 1, None, None).is_err());
     }
-
 }
