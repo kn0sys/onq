@@ -217,6 +217,21 @@ cargo run --example vm_teleportation [--release]
 * install [evcxr](https://github.com/evcxr/evcxr/blob/main/evcxr_jupyter/README.md)
 * see the `onq/notebooks` directory
 
+## Changelog
+
+### 🚀 v0.5.0 Architecture: The Isotropic Vector Matrix
+Unlike conventional quantum computing simulators that rely on massive, computationally expensive $2^N$ global state vectors and probabilistic dice rolls (the Born rule), `onq v0.5.0` completely reimagines computation:
+
+* **$O(1)$ Geometric Tensor Networks:** `onq` has deprecated flat global arrays. QDUs are now physically mapped to the 64 vertices of the **Isotropic Vector Matrix** (the 64-Tetrahedron Grid). States are maintained as localized Projected Entangled Pair States (PEPS), dropping memory overhead to near-zero.
+* **The Locality Rule:** Spooky action at a distance is prohibited. Operations like `RelationalLock` and `ControlledInteraction` are physically bounded. Entanglement can only occur between geometrically adjacent nodes.
+* **Deterministic Phase Coherence:** We do not use RNG to collapse wavefunctions. `Stabilize` utilizes the Golden Ratio ($1/\phi \approx 0.618$) as a strict coherence threshold, making superposition collapse entirely deterministic and structurally sound.
+
+## Core Concepts
+
+* **Qualitative Distinction Unit (QDU):** The fundamental unit, analogous to a qubit, physically rooted in 3D matrix space. 
+* **Geometric Potentiality State:** A decentralized, node-based tensor network.
+* **ONQ Virtual Machine (ONQ-VM):** An interpreter that executes algorithms (like Quantum Teleportation) by natively routing data across the structural pathways of the matrix.
+
 ## License
 
 Licensed under
