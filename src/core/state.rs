@@ -39,11 +39,10 @@ use crate::topology::IvmTopology;
 /// A localized state tensor for a single QDU
 #[derive(Clone, Debug)]
 pub struct LocalTensor {
-    // The minimal binary basis {Quality0, Quality1}, analogous to |0> and |1>
+    /// The minimal binary basis {Quality0, Quality1}
     pub core_state: [Complex<f64>; 2],
 
-    // Entanglement bonds to physical neighbors.
-    // Key: Neighbor QDU ID, Value: The shared correlation tensor/matrix
+    /// Entanglement bonds to physical neighbors in the IVM.
     pub bonds: HashMap<u64, Vec<Complex<f64>>>,
 }
 
@@ -63,11 +62,17 @@ impl LocalTensor {
 /// The geometrically bound quantum state engine
 #[derive(Clone, Debug)]
 pub struct GeometricPotentialityState {
-    // The distributed state network, mapping QDU IDs to their local tensors
+    /// The distributed state network, mapping QDU IDs to their local tensors
     pub network: HashMap<u64, LocalTensor>,
 
-    // The immutable structural rules governing the network
+    /// The immutable structural rules governing the network
     pub topology: IvmTopology,
+}
+
+impl Default for GeometricPotentialityState {
+    fn default() -> GeometricPotentialityState {
+        GeometricPotentialityState::new()
+    }
 }
 
 impl GeometricPotentialityState {

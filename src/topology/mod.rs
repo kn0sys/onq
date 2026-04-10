@@ -22,6 +22,12 @@ pub struct IvmTopology {
     pub edges: HashMap<IvmCoordinate, HashSet<IvmCoordinate>>,
 }
 
+impl Default for IvmTopology {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IvmTopology {
     /// Generates the 64 nodes of the Isotropic Vector Matrix and wires their topological edges.
     pub fn new() -> Self {
@@ -76,10 +82,10 @@ impl IvmTopology {
 
     /// The Locality Rule: Checks if two QDUs are physically adjacent
     pub fn are_adjacent(&self, qdu_a: u64, qdu_b: u64) -> bool {
-        if let (Some(coord_a), Some(coord_b)) = (self.nodes.get(&qdu_a), self.nodes.get(&qdu_b)) {
-            if let Some(neighbors) = self.edges.get(coord_a) {
-                return neighbors.contains(coord_b);
-            }
+        if let (Some(coord_a), Some(coord_b)) = (self.nodes.get(&qdu_a), self.nodes.get(&qdu_b))
+            && let Some(neighbors) = self.edges.get(coord_a)
+        {
+            return neighbors.contains(coord_b);
         }
         false
     }

@@ -1,7 +1,6 @@
 use crate::core::{OnqError, PotentialityState, QduId, StableState};
 use crate::operations::Operation;
 use crate::simulation::SimulationResult;
-use crate::validation;
 use num_complex::Complex;
 use num_traits::identities::Zero;
 use std::collections::{HashMap, HashSet};
@@ -14,9 +13,6 @@ pub(crate) struct SimulationEngine {
 
     /// The localized Tensor Network bounded by the Isotropic Vector Matrix
     global_state: PotentialityState,
-
-    /// Number of QDUs being simulated
-    num_qdus: usize,
 }
 
 impl SimulationEngine {
@@ -28,11 +24,14 @@ impl SimulationEngine {
             });
         }
 
-        let num_qdus = qdu_ids.len();
         let mut qdu_indices = HashMap::new();
 
+        // This ensures QDU 0, 1, and 2 form a physically connected, contiguous wire.
+        let mut sorted_ids: Vec<QduId> = qdu_ids.iter().cloned().collect();
+        sorted_ids.sort();
+
         // Map the requested QDUs to the 64 available IVM slots
-        for (i, &qdu_id) in qdu_ids.iter().enumerate() {
+        for (i, qdu_id) in sorted_ids.into_iter().enumerate() {
             if i >= 64 {
                 return Err(OnqError::SimulationError {
                     message: "Hardware Limit Exceeded: The Isotropic Vector Matrix supports a maximum of 64 localized QDUs.".to_string()
@@ -47,7 +46,6 @@ impl SimulationEngine {
         Ok(Self {
             qdu_indices,
             global_state,
-            num_qdus,
         })
     }
 
@@ -55,7 +53,12 @@ impl SimulationEngine {
         &self.global_state
     }
 
-    #[cfg(test)]
+    #[allow(dead_code)]
+    pub(crate) fn get_state_mut_for_test(&mut self) -> &mut PotentialityState {
+        &mut self.global_state
+    }
+
+    #[allow(dead_code)]
     pub(crate) fn set_state(&mut self, state: PotentialityState) -> Result<(), OnqError> {
         self.global_state = state;
         Ok(())

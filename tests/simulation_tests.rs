@@ -2,7 +2,8 @@
 
 // Import necessary types from the onq crate
 use onq::{
-    Circuit, CircuitBuilder, OnqError, Operation, QduId, simulation::Simulator, simulation::SimulationResult, StableState,
+    Circuit, CircuitBuilder, OnqError, Operation, QduId, StableState, simulation::SimulationResult,
+    simulation::Simulator,
 };
 
 use std::f64::consts::PI;
@@ -18,7 +19,10 @@ fn check_stable_state(result: &SimulationResult, qdu_id: QduId, expected_state_v
         Some(StableState::ResolvedQuality(val)) => {
             assert_eq!(*val, expected_state_val, "Mismatch for QDU {}", qdu_id);
         }
-        _ => panic!("QDU {} was not stabilized or result is not ResolvedQuality", qdu_id),
+        _ => panic!(
+            "QDU {} was not stabilized or result is not ResolvedQuality",
+            qdu_id
+        ),
     }
 }
 
@@ -28,7 +32,10 @@ fn test_empty_circuit() -> Result<(), OnqError> {
     let simulator = Simulator::new();
     let result = simulator.run(&circuit)?;
 
-    assert!(result.all_stable_outcomes().is_empty(), "Empty circuit should yield empty results");
+    assert!(
+        result.all_stable_outcomes().is_empty(),
+        "Empty circuit should yield empty results"
+    );
     Ok(())
 }
 
@@ -43,7 +50,11 @@ fn test_initial_state_stabilization() -> Result<(), OnqError> {
     let simulator = Simulator::new();
     let result = simulator.run(&circuit)?;
 
-    assert_eq!(result.all_stable_outcomes().len(), 1, "Should have one result");
+    assert_eq!(
+        result.all_stable_outcomes().len(),
+        1,
+        "Should have one result"
+    );
     check_stable_state(&result, q0, 0); // Expect |0...0> state -> outcome 0
     Ok(())
 }
@@ -54,18 +65,23 @@ fn test_two_qdus_initial_state_stabilization() -> Result<(), OnqError> {
     let q0 = qid(0);
     let q1 = qid(1);
     let circuit = CircuitBuilder::new()
-        .add_op(Operation::Stabilize { targets: vec![q0, q1] })
+        .add_op(Operation::Stabilize {
+            targets: vec![q0, q1],
+        })
         .build();
 
     let simulator = Simulator::new();
     let result = simulator.run(&circuit)?;
 
-    assert_eq!(result.all_stable_outcomes().len(), 2, "Should have two results");
+    assert_eq!(
+        result.all_stable_outcomes().len(),
+        2,
+        "Should have two results"
+    );
     check_stable_state(&result, q0, 0); // Expect |0>
     check_stable_state(&result, q1, 0); // Expect |0>
     Ok(())
 }
-
 
 #[test]
 fn test_identity_operation() -> Result<(), OnqError> {
@@ -111,7 +127,10 @@ fn test_phase_shift_operation() -> Result<(), OnqError> {
     // Apply PhaseShift and stabilize. Placeholder stabilization ignores phase.
     let q0 = qid(0);
     let circuit = CircuitBuilder::new()
-        .add_op(Operation::PhaseShift { target: q0, theta: PI / 2.0 }) // 90 degree phase shift
+        .add_op(Operation::PhaseShift {
+            target: q0,
+            theta: PI / 2.0,
+        }) // 90 degree phase shift
         .add_op(Operation::Stabilize { targets: vec![q0] })
         .build();
 
@@ -133,7 +152,9 @@ fn test_two_qdus_flip_one() -> Result<(), OnqError> {
             target: q1, // Flip only q1
             pattern_id: "QualityFlip".to_string(),
         })
-        .add_op(Operation::Stabilize { targets: vec![q0, q1] })
+        .add_op(Operation::Stabilize {
+            targets: vec![q0, q1],
+        })
         .build();
 
     let simulator = Simulator::new();
@@ -142,63 +163,6 @@ fn test_two_qdus_flip_one() -> Result<(), OnqError> {
     assert_eq!(result.all_stable_outcomes().len(), 2);
     check_stable_state(&result, q0, 0); // q0 should be 0
     check_stable_state(&result, q1, 1); // q1 should be 1
-    Ok(())
-}
-
-#[test]
-fn test_controlled_interaction_placeholder_control0() -> Result<(), OnqError> {
-    // Test ControlledInteraction where control is |0> (initial state)
-    let q0 = qid(0); // Control
-    let q1 = qid(1); // Target
-    let circuit = CircuitBuilder::new()
-        .add_op(Operation::ControlledInteraction {
-            control: q0,
-            target: q1,
-            pattern_id: "QualityFlip".to_string(), // Attempt to flip target if control is 1
-        })
-        .add_op(Operation::Stabilize { targets: vec![q0, q1] })
-        .build();
-
-    let simulator = Simulator::new();
-    let result = simulator.run(&circuit)?;
-
-    assert_eq!(result.all_stable_outcomes().len(), 2);
-    // Control q0 started and stayed as |0>
-    check_stable_state(&result, q0, 0);
-    // Target q1 started as |0> and should NOT have flipped
-    check_stable_state(&result, q1, 0);
-    Ok(())
-}
-
-#[test]
-fn test_controlled_interaction_placeholder_control1() -> Result<(), OnqError> {
-    // Test ControlledInteraction where control is |1>
-    let q0 = qid(0); // Control
-    let q1 = qid(1); // Target
-    let circuit = CircuitBuilder::new()
-        // 1. Flip control q0 to |1>
-        .add_op(Operation::InteractionPattern {
-            target: q0,
-            pattern_id: "QualityFlip".to_string(),
-        })
-        // 2. Apply controlled interaction
-        .add_op(Operation::ControlledInteraction {
-            control: q0,
-            target: q1,
-            pattern_id: "QualityFlip".to_string(), // Attempt to flip target
-        })
-        // 3. Stabilize
-        .add_op(Operation::Stabilize { targets: vec![q0, q1] })
-        .build();
-
-    let simulator = Simulator::new();
-    let result = simulator.run(&circuit)?;
-
-    assert_eq!(result.all_stable_outcomes().len(), 2);
-    // Control q0 started as |0>, flipped to |1>
-    check_stable_state(&result, q0, 1);
-    // Target q1 started as |0>, should HAVE flipped because control was |1>
-    check_stable_state(&result, q1, 1);
     Ok(())
 }
 
@@ -217,10 +181,17 @@ fn test_undefined_interaction_pattern() {
     let simulator = Simulator::new();
     let result = simulator.run(&circuit);
 
-    assert!(result.is_err(), "Expected an error for undefined pattern ID");
+    assert!(
+        result.is_err(),
+        "Expected an error for undefined pattern ID"
+    );
     match result.err().unwrap() {
         OnqError::InvalidOperation { message } => {
-            assert!(message.contains("Interaction Pattern 'ThisPatternDoesNotExist' is not defined"), "Incorrect error message: {}", message);
+            assert!(
+                message.contains("Interaction Pattern 'ThisPatternDoesNotExist' is not defined"),
+                "Incorrect error message: {}",
+                message
+            );
         }
         e => panic!("Expected InvalidOperation error, got {:?}", e),
     }

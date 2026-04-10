@@ -143,7 +143,7 @@ impl OnqVm {
             match instruction {
                 Instruction::QuantumOp(op) => {
                     if let Some(engine) = self.engine.as_mut() {
-                        println!("TODO: update application operation");
+                        engine.apply_operation(op)?;
                     } else {
                         return Err(OnqError::InvalidOperation { message: "Cannot execute QuantumOp: SimulationEngine not initialized (no QDUs defined in program?).".to_string() });
                     }

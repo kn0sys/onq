@@ -3,7 +3,6 @@
 //! Provides functions to validate `GeometricPotentialityState` based on localized tensor principles.
 
 use crate::core::{OnqError, PotentialityState};
-use num_complex::Complex;
 
 // Default tolerance values
 const DEFAULT_NORM_TOLERANCE: f64 = 1e-6; // Slightly relaxed for tensor product accumulation

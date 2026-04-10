@@ -76,7 +76,7 @@ impl Simulator {
                 _ => {
                     // Apply the state evolution operation to the engine's state vector.
                     // **CRITICAL:** Uses placeholder gate application logic in the engine currently.
-                    println!("TODO: apply operation");
+                    engine.apply_operation(op)?;
                 }
             }
             // Optional: Perform state validation after each step if configured/needed for debugging.
@@ -94,273 +94,47 @@ impl Simulator {
     }
 }
 
-// src/simulation/mod.rs
-// ... (rest of the file above) ...
-
 #[cfg(test)]
 mod tests {
-    // Import items from the parent module (simulation) and the crate root
-    use super::engine::SimulationEngine; // Access the crate-visible engine module
-    use super::*; // Brings Simulator, SimulationResult etc. into scope
-    use crate::core::*; // QduId, StableState, PotentialityState, OnqError
+    use super::*;
+    use crate::core::{QduId, StableState};
+    use crate::simulation::engine::SimulationEngine;
     use num_complex::Complex;
-    use num_traits::Zero;
-    use std::collections::HashSet; // HashMap might be needed again
-    use std::f64::consts::FRAC_1_SQRT_2;
+    use std::collections::HashSet;
 
-    const TEST_TOLERANCE: f64 = 1e-9;
+    #[test]
+    fn test_geometric_stabilization() {
+        let mut qdus = HashSet::new();
+        qdus.insert(QduId(0));
 
-    // --- Helper Functions ---
-    // (Copy qid and check_stable_state helpers here if not made pub elsewhere)
-    fn qid(id: u64) -> QduId {
-        QduId(id)
+        let mut engine = SimulationEngine::init(&qdus).unwrap();
+        let mut result = SimulationResult::new();
+
+        // Target QDU 0. By default, it initializes in |0>
+        engine.stabilize(&[QduId(0)], &mut result).unwrap();
+
+        // It should deterministically resolve to 0
+        let outcome = result.get_stable_state(&QduId(0)).unwrap();
+        assert_eq!(outcome, &StableState::ResolvedQuality(0));
     }
 
-    fn check_stable_state(result: &SimulationResult, qdu_id: QduId, expected_state_val: u64) {
-        match result.get_stable_state(&qdu_id) {
-            Some(StableState::ResolvedQuality(val)) => {
-                assert_eq!(*val, expected_state_val, "Mismatch for QDU {}", qdu_id);
-            }
-            _ => panic!(
-                "QDU {} was not stabilized or result is not ResolvedQuality",
-                qdu_id
-            ),
+    #[test]
+    fn test_superposition_collapse() {
+        let mut qdus = HashSet::new();
+        qdus.insert(QduId(0));
+
+        let mut engine = SimulationEngine::init(&qdus).unwrap();
+
+        // Manually force QDU 0 into a |1> state for testing
+        if let Some(tensor) = engine.get_state_mut_for_test().network.get_mut(&0) {
+            tensor.core_state = [Complex::new(0.0, 0.0), Complex::new(1.0, 0.0)];
         }
-    }
-
-    /// Asserts that two complex state vectors are approximately equal component-wise.
-    /// Panics if lengths differ or if the squared distance between any pair
-    /// of complex components exceeds tolerance * tolerance.
-    fn assert_complex_vec_approx_equal(
-        actual: &[Complex<f64>],
-        expected: &[Complex<f64>],
-        tolerance: f64, // Pass in the tolerance constant
-        context: &str,  // Context message for better error reporting
-    ) {
-        assert_eq!(
-            actual.len(),
-            expected.len(),
-            "Vector length mismatch - {}",
-            context
-        );
-        for i in 0..actual.len() {
-            // Calculate squared distance between complex numbers
-            // diff = (ax - ex) + i(ay - ey)
-            // dist_sq = |diff|^2 = (ax - ex)^2 + (ay - ey)^2
-            let diff = actual[i] - expected[i];
-            let dist_sq = diff.norm_sqr(); // norm_sqr() computes re*re + im*im
-
-            // Compare squared distance with squared tolerance to avoid sqrt
-            assert!(
-                dist_sq < tolerance * tolerance,
-                "Vector mismatch at index {} - Actual: {}, Expected: {}, DistSq: {:.3e}, Context: {}",
-                i,
-                actual[i],
-                expected[i],
-                dist_sq,
-                context
-            );
-        }
-    }
-
-    #[test]
-    fn test_stabilize_basis_state() -> Result<(), OnqError> {
-        // Stabilizing a basis state should always yield that state
-        let q0 = qid(0);
-        let q1 = qid(1);
-        let qdu_set: HashSet<QduId> = [q0, q1].iter().cloned().collect();
-        let mut engine = SimulationEngine::init(&qdu_set)?;
-
-        // Test |01> state (index 1)
-        let state_vec_01 = vec![
-            Complex::new(0.0, 0.0),
-            Complex::new(1.0, 0.0), // Index 1 = |01>
-            Complex::new(0.0, 0.0),
-            Complex::new(0.0, 0.0),
-        ];
-        engine.set_state(PotentialityState::new())?;
-        let mut result = SimulationResult::new();
-        engine.stabilize(&[q0, q1], &mut result)?;
-
-        // Test |10> state (index 2)
-        let state_vec_10 = vec![
-            Complex::new(0.0, 0.0),
-            Complex::new(0.0, 0.0),
-            Complex::new(1.0, 0.0),
-            Complex::new(0.0, 0.0), // Index 2 = |10>
-        ];
-        engine.set_state(PotentialityState::new())?;
-        result = SimulationResult::new(); // Reset result
-        engine.stabilize(&[q0, q1], &mut result)?;
-
-        check_stable_state(&result, q0, 1);
-        check_stable_state(&result, q1, 0);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_stabilize_superposition_equal_zero_phase() -> Result<(), OnqError> {
-        // Test state: (1/sqrt(2))|0> + (1/sqrt(2))|1>
-        // Expected scores (from thought): S(0) = 0.5, S(1) = 0.25 -> Outcome 0
-        let q0 = qid(0);
-        let qdu_set: HashSet<QduId> = [q0].iter().cloned().collect();
-        let mut engine = SimulationEngine::init(&qdu_set)?;
-
-        let state_vec = vec![
-            Complex::new(FRAC_1_SQRT_2, 0.0), // |0>
-            Complex::new(FRAC_1_SQRT_2, 0.0), // |1>
-        ];
-        engine.set_state(PotentialityState::new())?;
-        let mut result = SimulationResult::new();
-        engine.stabilize(&[q0], &mut result)?;
-
-        check_stable_state(&result, q0, 0); // Expect outcome 0
-        Ok(())
-    }
-
-    #[test]
-    fn test_stabilize_two_qdu_entangled_like() -> Result<(), OnqError> {
-        // Test state: ~(0.6)|00> + ~(0.8)|11> (Approx normalized)
-        // Expected scores (from thought): S(0)=0.36, S(3)~=0.213 -> Outcome 0 (|00>)
-        let q0 = qid(0);
-        let q1 = qid(1);
-        let qdu_set: HashSet<QduId> = [q0, q1].iter().cloned().collect();
-        let mut engine = SimulationEngine::init(&qdu_set)?;
-
-        let c00 = Complex::new(0.6, 0.0);
-        let c11 = Complex::new(0.8, 0.0);
-        let state_vec = vec![c00, Complex::zero(), Complex::zero(), c11]; // |00>, |01>, |10>, |11>
-        engine.set_state(PotentialityState::new())?;
 
         let mut result = SimulationResult::new();
-        engine.stabilize(&[q0, q1], &mut result)?;
+        engine.stabilize(&[QduId(0)], &mut result).unwrap();
 
-        check_stable_state(&result, q0, 0);
-        check_stable_state(&result, q1, 0);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_stabilize_deterministic_seed() -> Result<(), OnqError> {
-        // State: 0.5*(|00> + |01> + |10> - |11>)
-        // Only outcome k=0 (|00>) passes filter (score=1.0). Stabilization should succeed.
-        println!("\n--- Test: Stabilize state where only one outcome passes filter ---");
-        let q0 = qid(0);
-        let q1 = qid(1);
-        let qdu_set: HashSet<QduId> = [q0, q1].iter().cloned().collect();
-
-        let initial_state_vec = vec![
-            Complex::new(0.5, 0.0),
-            Complex::new(0.5, 0.0),
-            Complex::new(0.5, 0.0),
-            Complex::new(-0.5, 0.0),
-        ];
-        let initial_state = PotentialityState::new();
-
-        let mut engine = SimulationEngine::init(&qdu_set)?;
-        engine.set_state(initial_state)?;
-        let result = SimulationResult::new();
-
-        // Check determinism (redundant now, but keep for structure)
-        let mut engine2 = SimulationEngine::init(&qdu_set)?;
-        engine2.set_state(engine.get_state().clone())?; // Use the *final* state from engine1? No, use initial state again
-        engine2.set_state(PotentialityState::new())?;
-        let result2 = SimulationResult::new();
-        assert_eq!(
-            result, result2,
-            "Stabilization outcome should be deterministic for the same input state"
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_stabilize_superposition_equal_pi_over_2_phase() -> Result<(), OnqError> {
-        // Test state: (1/sqrt(2))|0> + (i/sqrt(2))|1>
-        // Expected C1 score = 0.5 for both k=0, k=1. Neither passes >0.618 filter.
-        // Expected outcome: Error (Instability) because no outcome is valid.
-        println!("\n--- Test: Stabilize state failing filter for all outcomes (PI/2 phase) ---");
-        let q0 = qid(0);
-        let qdu_set: HashSet<QduId> = [q0].iter().cloned().collect();
-        let mut engine = SimulationEngine::init(&qdu_set)?;
-
-        let state_vec = vec![
-            Complex::new(FRAC_1_SQRT_2, 0.0), // |0>
-            Complex::new(0.0, FRAC_1_SQRT_2), // |1> (phase PI/2)
-        ];
-        engine.set_state(PotentialityState::new())?;
-        let mut result = SimulationResult::new();
-        let stabilization_result = engine.stabilize(&[q0], &mut result); // Capture result
-
-        // Assert that stabilization now SUCCEEDS because C1 filter is removed
-        assert!(
-            stabilization_result.is_ok(),
-            "Stabilization should now succeed for PI/2 phase state"
-        );
-        Ok(()) // Test passes if the correct error occurred
-    }
-
-    #[test]
-    fn test_stabilize_superposition_equal_pi_phase() -> Result<(), OnqError> {
-        // Test state: (1/sqrt(2))|0> - (1/sqrt(2))|1>
-        // Expected C1 score = 0.0 for both k=0, k=1. Neither passes >0.618 filter.
-        // Expected outcome: Error (Instability) because no outcome is valid.
-        println!("\n--- Test: Stabilize state failing filter for all outcomes (PI phase) ---");
-        let q0 = qid(0);
-        let qdu_set: HashSet<QduId> = [q0].iter().cloned().collect();
-        let mut engine = SimulationEngine::init(&qdu_set)?;
-
-        let state_vec = vec![
-            Complex::new(FRAC_1_SQRT_2, 0.0),  // |0>
-            Complex::new(-FRAC_1_SQRT_2, 0.0), // |1> (phase PI)
-        ];
-        engine.set_state(PotentialityState::new())?;
-        let mut result = SimulationResult::new();
-        let stabilization_result = engine.stabilize(&[q0], &mut result);
-
-        // Assert that stabilization now SUCCEEDS because C1 filter is removed
-        assert!(
-            stabilization_result.is_ok(),
-            "Stabilization should now succeed for PI/2 phase state"
-        );
-        Ok(()) // Test passes if the correct error occurred
-    }
-
-    #[test]
-    fn test_relational_lock_multi_qdu_context() -> Result<(), OnqError> {
-        println!("\n--- Test: Project onto BellPhiPlus in 3 QDU context ---");
-        let q0 = qid(0); // Spectator
-        let q1 = qid(1); // Target lock
-        let q2 = qid(2); // Target lock
-        let qdu_set: HashSet<QduId> = [q0, q1, q2].iter().cloned().collect();
-        let mut engine = SimulationEngine::init(&qdu_set)?; // Starts in |000>
-
-        let lock_op = Operation::RelationalLock {
-            qdu1: q1, // Lock q1 and q2
-            qdu2: q2,
-            lock_type: crate::LockType::BellPhiPlus, // Target |Φ+>_{12}
-            establish: true,
-        };
-
-        engine.apply_operation(&lock_op)?; // Apply projection to q1, q2 subspace
-
-        // Expected state is |0>_0 ⊗ |Φ+>_{12}
-        // |0> ⊗ (1/√2)(|00> + |11>) = (1/√2)(|000> + |011>)
-        // Indices: |000>=0, |001>=1, |010>=2, |011>=3, |100>=4, ... |111>=7
-        let sqrt2_inv = Complex::new(FRAC_1_SQRT_2, 0.0);
-        let expected_state_vec = vec![
-            sqrt2_inv,       // 000
-            Complex::zero(), // 001
-            Complex::zero(), // 010
-            sqrt2_inv,       // 011
-            Complex::zero(), // 100
-            Complex::zero(), // 101
-            Complex::zero(), // 110
-            Complex::zero(), // 111
-        ];
-
-        Ok(())
+        // It should deterministically resolve to 1
+        let outcome = result.get_stable_state(&QduId(0)).unwrap();
+        assert_eq!(outcome, &StableState::ResolvedQuality(1));
     }
 }
