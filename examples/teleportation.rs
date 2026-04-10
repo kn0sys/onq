@@ -1,19 +1,22 @@
 //! Succinct examples demonstrating building and simulating circuits
 
-use onq::{
-    CircuitBuilder, Operation, QduId, Simulator, StableState
-};
+use onq::{CircuitBuilder, Operation, QduId, Simulator, StableState};
 
 // Helper for QduId creation for brevity in examples
-fn qid(id: u64) -> QduId { QduId(id) }
+fn qid(id: u64) -> QduId {
+    QduId(id)
+}
 
 fn main() {
     // Define the three QDUs involved
-    let msg_q = qid(0);    // Message QDU (will be prepared in |+>)
-    let alice_q = qid(1);  // Alice's QDU (part of the Bell pair)
-    let bob_q = qid(2);    // Bob's QDU (part of the Bell pair, receives the state)
+    let msg_q = qid(0); // Message QDU (will be prepared in |+>)
+    let alice_q = qid(1); // Alice's QDU (part of the Bell pair)
+    let bob_q = qid(2); // Bob's QDU (part of the Bell pair, receives the state)
 
-    println!("QDUs defined: msg={}, alice={}, bob={}", msg_q, alice_q, bob_q);
+    println!(
+        "QDUs defined: msg={}, alice={}, bob={}",
+        msg_q, alice_q, bob_q
+    );
 
     // --- Build Circuit using Quantum Recovery Logic ---
 
@@ -28,11 +31,13 @@ fn main() {
     println!("  Step 1: Prepared Message QDU in |+> state (using Superposition).");
 
     // 2. Create Bell Pair between Alice and Bob: |Φ+> = (1/sqrt(2))(|00> + |11>)
-    builder = builder.add_op(Operation::InteractionPattern { // H on Alice
+    builder = builder.add_op(Operation::InteractionPattern {
+        // H on Alice
         target: alice_q,
         pattern_id: "Superposition".to_string(),
     });
-    builder = builder.add_op(Operation::ControlledInteraction { // CNOT(Alice, Bob)
+    builder = builder.add_op(Operation::ControlledInteraction {
+        // CNOT(Alice, Bob)
         control: alice_q,
         target: bob_q,
         pattern_id: "QualityFlip".to_string(), // X analog
@@ -40,31 +45,71 @@ fn main() {
     println!("  Step 2: Created Bell Pair between Alice and Bob.");
 
     // 3. Alice performs Bell Measurement operations (basis change)
-    builder = builder.add_op(Operation::ControlledInteraction { // CNOT(Message, Alice)
+    builder = builder.add_op(Operation::ControlledInteraction {
+        // CNOT(Message, Alice)
         control: msg_q,
         target: alice_q,
         pattern_id: "QualityFlip".to_string(),
     });
-    builder = builder.add_op(Operation::InteractionPattern { // H on Message
+    builder = builder.add_op(Operation::InteractionPattern {
+        // H on Message
         target: msg_q,
         pattern_id: "Superposition".to_string(),
     });
     println!("  Step 3: Applied Bell Measurement basis change gates (CNOT, H).");
 
-    // 4. Quantum Recovery Operations (before stabilization)
-    //    These apply corrections based on the state *before* stabilization.
-    builder = builder.add_op(Operation::ControlledInteraction { // CNOT(Alice, Bob)
+    // Step 4: Applied Quantum Recovery gates (CNOT, CZ analog).
+    builder = builder.add_op(Operation::ControlledInteraction {
         control: alice_q,
         target: bob_q,
+        pattern_id: "QualityFlip".to_string(), // CNOT 1->2 (Valid! Physically Adjacent)
+    });
+
+    // --- THE SWAP ROUTING PROTOCOL ---
+    // We cannot CZ(msg_q, bob_q) because 0 and 2 are not adjacent.
+    // We must SWAP the message state into Alice's adjacent node.
+    // SWAP(0, 1) = CNOT(0,1) + CNOT(1,0) + CNOT(0,1)
+
+    builder = builder.add_op(Operation::ControlledInteraction {
+        control: msg_q,
+        target: alice_q,
         pattern_id: "QualityFlip".to_string(),
     });
-    builder = builder.add_op(Operation::ControlledInteraction { // CZ(Message, Bob) analog
+    builder = builder.add_op(Operation::ControlledInteraction {
+        control: alice_q,
+        target: msg_q,
+        pattern_id: "QualityFlip".to_string(),
+    });
+    builder = builder.add_op(Operation::ControlledInteraction {
         control: msg_q,
+        target: alice_q,
+        pattern_id: "QualityFlip".to_string(),
+    });
+
+    // Now the message state resides in Node 1. We can apply the CZ to Bob (Node 2)!
+    builder = builder.add_op(Operation::ControlledInteraction {
+        control: alice_q, // The message state is now here
         target: bob_q,
-        pattern_id: "PhaseIntroduce".to_string(), // Use derived Z analog pattern
+        pattern_id: "PhaseIntroduce".to_string(), // CZ 1->2 (Valid! Physically Adjacent)
+    });
+
+    // SWAP back to restore the original structural positions
+    builder = builder.add_op(Operation::ControlledInteraction {
+        control: msg_q,
+        target: alice_q,
+        pattern_id: "QualityFlip".to_string(),
+    });
+    builder = builder.add_op(Operation::ControlledInteraction {
+        control: alice_q,
+        target: msg_q,
+        pattern_id: "QualityFlip".to_string(),
+    });
+    builder = builder.add_op(Operation::ControlledInteraction {
+        control: msg_q,
+        target: alice_q,
+        pattern_id: "QualityFlip".to_string(),
     });
     println!("  Step 4: Applied Quantum Recovery gates (CNOT, CZ analog).");
-
     // 5. Stabilize Bob's QDU to observe the teleported state
     //    Optionally stabilize Alice and Message to see their final states too.
     builder = builder.add_op(Operation::Stabilize {
@@ -75,7 +120,10 @@ fn main() {
     let circuit = builder.build();
 
     // Print the constructed circuit diagram
-    println!("\nQuantum Teleportation Circuit (Quantum Recovery):\n{}", circuit);
+    println!(
+        "\nQuantum Teleportation Circuit (Quantum Recovery):\n{}",
+        circuit
+    );
 
     // --- Run Simulation ---
     let simulator = Simulator::new();
@@ -96,22 +144,44 @@ fn main() {
             // or running statistical tests if stabilization were probabilistic.
 
             println!("\nAnalysis:");
-            if let Some(StableState::ResolvedQuality(bob_outcome)) = result.get_stable_state(&bob_q) {
-                println!("- Bob's QDU ({}) stabilized to state: {}", bob_q, bob_outcome);
-                println!("  (Note: Expected pre-stabilization state was |+>, outcome {} depends on deterministic stabilization)", bob_outcome);
+            if let Some(StableState::ResolvedQuality(bob_outcome)) = result.get_stable_state(&bob_q)
+            {
+                println!(
+                    "- Bob's QDU ({}) stabilized to state: {}",
+                    bob_q, bob_outcome
+                );
+                println!(
+                    "  (Note: Expected pre-stabilization state was |+>, outcome {} depends on deterministic stabilization)",
+                    bob_outcome
+                );
             } else {
-                println!("- Bob's QDU ({}) was not found in stabilization results.", bob_q);
+                println!(
+                    "- Bob's QDU ({}) was not found in stabilization results.",
+                    bob_q
+                );
             }
             // Print Alice and Message outcomes too
-            if let Some(StableState::ResolvedQuality(alice_outcome)) = result.get_stable_state(&alice_q) {
-                println!("- Alice's QDU ({}) stabilized to state: {}", alice_q, alice_outcome);
+            if let Some(StableState::ResolvedQuality(alice_outcome)) =
+                result.get_stable_state(&alice_q)
+            {
+                println!(
+                    "- Alice's QDU ({}) stabilized to state: {}",
+                    alice_q, alice_outcome
+                );
             }
-            if let Some(StableState::ResolvedQuality(msg_outcome)) = result.get_stable_state(&msg_q) {
-                println!("- Message's QDU ({}) stabilized to state: {}", msg_q, msg_outcome);
-                println!("  (These represent the classical bits Alice would send in standard protocol)");
+            if let Some(StableState::ResolvedQuality(msg_outcome)) = result.get_stable_state(&msg_q)
+            {
+                println!(
+                    "- Message's QDU ({}) stabilized to state: {}",
+                    msg_q, msg_outcome
+                );
+                println!(
+                    "  (These represent the classical bits Alice would send in standard protocol)"
+                );
             }
-            println!("\nVerification of perfect state teleportation would require state vector analysis.");
-
+            println!(
+                "\nVerification of perfect state teleportation would require state vector analysis."
+            );
         }
         Err(e) => {
             eprintln!("\n--- Simulation Failed ---");
