@@ -164,20 +164,21 @@ pub fn check_phase_coherence(
 /// * `Err(OnqError::Incoherence)` if any check fails.
 pub fn validate_state(
     state: &PotentialityState,
-    _num_qdus: usize, // Keep param for API consistency for now
-    norm_tolerance: Option<f64>,
-    _coherence_threshold: Option<f64>, // Mark as unused
-    _amplitude_tolerance: Option<f64>, // Mark as unused
+    _num_qdus: usize,
+    _phase_tolerance: Option<f64>,
+    _amplitude_tolerance: Option<f64>,
+    _c1_threshold: Option<f64>,
 ) -> Result<(), OnqError> {
-    // Use provided tolerances or defaults
-    let eff_norm_tol = norm_tolerance.unwrap_or(DEFAULT_NORM_TOLERANCE);
-    // let eff_coh_thresh = coherence_threshold.unwrap_or(DEFAULT_COHERENCE_THRESHOLD);
-    // let eff_amp_tol = amplitude_tolerance.unwrap_or(DEFAULT_AMPLITUDE_TOLERANCE);
+    let norm_sq = state.global_norm_sq();
 
-    // Perform checks
-    check_normalization(state, Some(eff_norm_tol))?;
-    // REMOVED: check_phase_coherence(state, num_qdus, Some(eff_coh_thresh), Some(eff_amp_tol))?;
-
+    if (norm_sq - 1.0).abs() > 1e-6 {
+        return Err(OnqError::Incoherence {
+            message: format!(
+                "State normalization failed! Total norm squared: {}",
+                norm_sq
+            ),
+        });
+    }
     Ok(())
 }
 
